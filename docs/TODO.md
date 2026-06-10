@@ -41,8 +41,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · → owner
 - **Gates (Rust 1.85.0):** `cargo build`, `cargo clippy --all-targets -- -D warnings`, `cargo test --all` (lib unit + 11 hasher integration), `cargo fmt --all -- --check` — verified green by the SubagentStop hook at turn end.
 
 ## Phase 3 — parser: Python (M3) · plan: [plans/M3-parser-python.md](plans/M3-parser-python.md)
-- [ ] RED tests: byte spans on nested/async/decorated; ERROR-node fallback → test-lead
-- [ ] `parser` + Python `.scm` queries; graceful degradation (Decision D2) → engineering-lead + specialist
+- [x] RED tests: byte spans on nested/async/decorated; ERROR-node fallback → test-lead (14 tests + 10 fixtures in `tests/parser_tests.rs`)
+- [x] `parser` + Python `.scm` queries; graceful degradation (Decision D2) → engineering-lead + specialist
+  - **GREEN (2026-06-10):** `Parser::new/parse_file/extract_chunks`, free `error_rate`/`should_fall_back`, `HEURISTIC_FALLBACK_THRESHOLD`, typed `ParserError` (`std::error::Error` + `source()`). `src/parser/python.rs` + `src/parser/queries/python.scm` (validated against the grammar in `new`). Byte-exact spans (decorator wrapper included, trailing line terminator appended, CRLF preserved, multibyte-safe); method-vs-function by nearest definition ancestor; `error_rate` = (ERROR+MISSING)/named-nodes. `error_rate` API + `HEURISTIC_FALLBACK_THRESHOLD` recorded in `project_plan.md` §3.2.1.
+  - **Gates (Rust 1.85.0):** `cargo build`, `cargo test --all` (61 passed; parser 14 integration + 3 unit, no regressions), `cargo clippy --all-targets -- -D warnings`, `cargo fmt --all -- --check` — all green.
+  - Seam: parser only *reports* the fallback flag; M4 chunker owns heuristic emission + the `heuristic` flag.
 
 ## Phase 4 — chunker (M4) · plan: [plans/M4-chunker.md](plans/M4-chunker.md)
 - [ ] RED tests: non-overlap property; metadata enrichment fields → test-lead

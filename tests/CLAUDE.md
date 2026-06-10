@@ -12,7 +12,26 @@ directory holds the wider integration/E2E/property surface.
 | Path | Role | Milestone |
 |---|---|---|
 | `smoke_test.rs` | M0 smoke test: crate links; `codecache::VERSION == CARGO_PKG_VERSION`. | M0 |
+| `parser_tests.rs` | M3 parser integration: exact byte spans, method/decorator/nested, ERROR-rate (D2). | M3 |
 | `fixtures/` | Sample source trees / files used by integration + E2E tests (added as needed). | M3+ |
+
+### `fixtures/python/` (M3 parser)
+Minimal, purpose-built Python files loaded by `parser_tests.rs`. Span assertions compare
+`&source[start_byte..end_byte]` to the expected text, so the exact bytes (incl. newlines) matter
+— do not reformat these.
+
+| File | Purpose | Newlines |
+|---|---|---|
+| `valid_module.py` | well-formed module: imports + free fn + class/method (parse-without-error). | LF |
+| `top_level_function.py` | single free function `greet`. | LF |
+| `simple_class.py` | `Greeter` class with `__init__` + `greet` methods. | LF |
+| `nested_function.py` | `outer` free fn containing a nested `inner`. | LF |
+| `async_def.py` | `async def fetch`. | LF |
+| `decorated_function.py` | `@cache` + `@retry(3)` over `def compute` (decorator-in-span). | LF |
+| `multibyte_identifier.py` | `def αβγ(τ)` — multibyte UTF-8 identifiers (byte-vs-char guard). | LF |
+| `crlf_function.py` | `def crlf_fn` with CRLF endings (span preserves `\r\n`). | **CRLF** |
+| `malformed.py` | one good fn + a broken `def broken(:` → some ERROR nodes (positive rate). | LF |
+| `high_error.py` | mostly garbage → ERROR-rate above `HEURISTIC_FALLBACK_THRESHOLD`. | LF |
 
 Integration tests for storage round-trips (M1), parser fixtures (M3), chunker non-overlap
 property (M4), indexer idempotency (M5), retriever ranking/budget (M6), formatter goldens +

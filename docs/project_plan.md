@@ -203,8 +203,7 @@ pub enum Language {
 
 pub struct LanguageConfig {
     grammar: tree_sitter::Language,
-    function_query: &'static str,  // Tree-sitter query for functions
-    class_query: &'static str,     // Tree-sitter query for classes
+    queries: &'static str,  // combined .scm: function/class/method + decorated_definition (M3)
 }
 
 impl Parser {
@@ -238,6 +237,48 @@ pub struct Chunk {
     pub cross_references: Vec<String>,  // referenced symbol names within the chunk
 }
 ```
+
+**ERROR-rate / graceful-degradation API** (M3-introduced, Decision Log D2). The parser walks the
+tree and reports the syntactic error density so M4/M5 can route badly-broken files to the
+heuristic chunker. v0.1 *only reports* here; the heuristic chunker and its `heuristic` flag are
+owned by M4.
+
+```rust
+// parser/mod.rs (free functions + const)
+
+/// (ERROR + MISSING) node count over the **named-node** count, clamped to [0, 1].
+/// Named-node denominator: anonymous literal tokens (`(`, `)`, `:`, `+`, `def`, …) carry no
+/// independent syntactic meaning and dilute the signal, so the honest measure is
+/// "broken syntactic units / meaningful syntactic units". `error_rate(valid) == 0.0`;
+/// any malformed file reports `> 0.0`.
+pub fn error_rate(tree: &tree_sitter::Tree) -> f32;
+
+/// `rate >= HEURISTIC_FALLBACK_THRESHOLD` ⇒ route to the M4 heuristic chunker.
+pub fn should_fall_back(rate: f32) -> bool;
+
+/// Fallback threshold (~20% of named nodes broken). In [0, 1).
+pub const HEURISTIC_FALLBACK_THRESHOLD: f32 = 0.20;
+
+// Typed error surface (no reachable unwrap/expect/panic on library paths):
+pub enum ParserError {
+    UnsupportedLanguage(Language),        // e.g. Go/TS at M3 ⇒ typed Err
+    Language(tree_sitter::LanguageError), // set_language failed
+    Query(tree_sitter::QueryError),       // an embedded `.scm` failed to compile
+    ParseFailed { path: PathBuf },        // tree-sitter returned no tree
+}
+// impl std::error::Error for ParserError { fn source() … } chains the underlying TS error.
+```
+
+**Chunk span conventions** (pinned by the M3 parser tests, byte-exact
+`&source[start_byte..end_byte] == chunk_text`):
+- A **decorated** definition is spanned from its `decorated_definition` wrapper, so the
+  `@decorator` lines are *inside* the chunk span (`start_line` is the first decorator line).
+- A `function_definition` whose nearest *definition* ancestor is a `class_definition` is a
+  `SymbolType::Method` with `parent_symbol = <class>`; a function nested in a function stays a
+  `Function` with `parent_symbol = <enclosing fn>`.
+- The span is extended to include the single trailing line terminator (`\n`, or `\r\n` for CRLF —
+  preserved verbatim) that closes the definition's last line. `start_line`/`end_line` are 1-based
+  inclusive (D7); the appended terminator does not advance `end_line`.
 
 **Tree-sitter Query Examples** (for extraction):
 
