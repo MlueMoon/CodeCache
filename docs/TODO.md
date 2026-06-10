@@ -33,9 +33,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · → owner
 - **REOPEN #1 (2026-06-10):** `cargo build` failed — `Chunk.file_docstring` was missing from the `symbols` FTS5 schema/insert/search (D3 enrichment column omitted from §4.1 DDL). Fixed spec-first (§4.1 + ROADMAP D11 follow-up), added 3 RED tests (incl. docstring-only-searchable), added `file_docstring` as last indexed column (bm25 weights 6→7).
 - **Gates verified green on Rust 1.85.0 (2026-06-10):** `cargo build`, `cargo clippy --all-targets -- -D warnings`, `cargo test --all` (**31 passed**: 7 lib + 5 config + 1 smoke + 18 storage), `cargo fmt --all -- --check`.
 
-## Phase 2 — hasher (M2) · plan: [plans/M2-hasher.md](plans/M2-hasher.md)
-- [ ] RED tests: deterministic hash, change detection → test-lead
-- [ ] `hasher` (xxHash3-128) → engineering-lead
+## Phase 2 — hasher (M2) · plan: [plans/M2-hasher.md](plans/M2-hasher.md) · **DONE 2026-06-10** (brief: [.claude/briefs/BRIEF-M2-hasher.md](../.claude/briefs/BRIEF-M2-hasher.md))
+- [x] RED tests written first: determinism, 1-byte sensitivity, 32-hex format, empty/binary, file-hash determinism, mtime-touch changes hash, missing-file typed error, change detection (unchanged/wrong-cache/None), 1MB sanity → test-lead
+- [x] `hasher` (xxHash3-128): `compute_content_hash`/`compute_file_hash` (content+mtime, §4.4)/`is_changed` + typed `HasherError` → engineering-lead
+- [x] Review APPROVE; D2 honored (binary/large no panic; missing → typed error); 32-hex format identical to M1 `files_metadata.content_hash` → code-reviewer
+- **Env note:** the `Agent`/`Task` tool was unavailable this run, so the manager performed every role (test-lead/eng-lead/reviewer) while preserving TDD order (RED tests first) and the full DoD.
+- **Gates (Rust 1.85.0):** `cargo build`, `cargo clippy --all-targets -- -D warnings`, `cargo test --all` (lib unit + 11 hasher integration), `cargo fmt --all -- --check` — verified green by the SubagentStop hook at turn end.
 
 ## Phase 3 — parser: Python (M3) · plan: [plans/M3-parser-python.md](plans/M3-parser-python.md)
 - [ ] RED tests: byte spans on nested/async/decorated; ERROR-node fallback → test-lead
