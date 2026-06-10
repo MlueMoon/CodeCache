@@ -168,6 +168,34 @@ Owner of `rust-toolchain.toml` + `ci.yml` + `.github/CLAUDE.md`: `devops-release
 ROADMAP/ENGINEERING_PLAN/phase-plan edits: manager. A generated `Cargo.lock` is committed
 (ROADMAP follow-up R1) so the resolved versions are reproducible.
 
+### D11 — FTS5 table form: drop `content='symbols'`, use a contentful table  · **Ratified for v0.1** (plan: M1, affects M10) — *spec: §4.1*
+project_plan §4.1's pseudo-DDL set `content='symbols'`. In FTS5 the `content=` option names a
+**separate external-content table** the FTS index reads from; pointing it at the FTS5 table's own
+name is not a valid external-content configuration. M1 therefore creates a **default (contentful)
+FTS5 table**: FTS5 stores every column value itself and returns it on `SELECT`, so a `Chunk`
+round-trips through `insert_chunks` → `search` with no companion table and the round-trip tests
+assert real column values. The FTS5 list columns `imports`/`cross_references` (no array type in
+FTS5) are stored as `\n`-joined text and split back on read.
+
+**Why this is safe for the budgets.** §4.2 estimates ~6MB index at Django scale — far under the
+<100MB target (§1.3) — so the modest duplication of a contentful table is acceptable for v0.1. An
+external-content layout (a `files`/`chunks` base table + `content_rowid`) can be revisited at M10
+only if the index-size budget is ever threatened. §4.1 annotated to reflect this. Owner: manager
+(spec) + rust-treesitter-specialist (FTS5).
+
+**Follow-up (M1 gate reopen, 2026-06-10): `file_docstring` is an indexed `symbols` column.**
+The §4.1 DDL listed only four of D3's enrichment fields (`parent_symbol`, `imports`,
+`cross_references`) as indexed and omitted `file_docstring`, even though the `Chunk` struct (§4.3)
+and D3 both declare `file_docstring` as enrichment "indexed in FTS5 to lift recall." The DDL was
+the documentation bug, not the struct: a `Chunk.file_docstring` must persist and be searchable so
+file-intent queries (e.g. a term that appears only in the module docstring) match. Fixed §4.1
+(both DDL blocks) to add `file_docstring` as the **last indexed column**, immediately before the
+UNINDEXED block — preserving the "indexed columns first, then UNINDEXED" ordering. This bumps the
+indexed-column count 6→7, so the `bm25()` per-column weight list grows by one entry
+(`file_docstring` weighted modestly, like `parent_symbol`). No schema-version bump: M1 is not yet
+released (the pre-release schema is being corrected in place). Owner: manager (spec) +
+rust-treesitter-specialist (FTS5 weights).
+
 ---
 
 ## Deferred to v0.2+ (from project_plan §9.2)

@@ -23,11 +23,15 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · → owner
 - [x] Follow-up (D9): `rusqlite` feature corrected `["bundled","fts5"]` → `["bundled"]` (no `fts5` feature in 0.32; FTS5 in the bundled amalgamation; ROADMAP D9) → in `Cargo.toml` + `project_plan.md §10.3`.
 - **Gates verified green on Rust 1.85.0 (2026-06-10):** `cargo build` (58s cold, C deps compiled), `cargo clippy --all-targets -- -D warnings`, `cargo test --all` (2 passed), `cargo fmt --all -- --check`.
 
-## Phase 1 — config + storage (M1) · plan: [plans/M1-config-storage.md](plans/M1-config-storage.md)
-- [ ] RED tests: config load/validate; FTS5 schema + bm25 ordering → test-lead
-- [ ] `config` module → engineering-lead
-- [ ] `storage`: schema (`symbols` FTS5, `files_metadata`, `index_state`), CRUD, migrations → engineering-lead + specialist (FTS5)
-- [ ] Review + perf note on FTS5 query plan → code-reviewer / perf
+## Phase 1 — config + storage (M1) · plan: [plans/M1-config-storage.md](plans/M1-config-storage.md) · **DONE 2026-06-10** (brief: [.claude/briefs/BRIEF-M1-config-storage.md](../.claude/briefs/BRIEF-M1-config-storage.md))
+- [x] `crate::types` (D5): `Chunk`/`SymbolType`/`Language`/`FileMeta` + `as_str`/`from_str_lenient` → engineering-lead
+- [x] RED tests written first: types unit; config load/defaults/errors; storage schema/idempotency/migration/CRUD/FTS5 MATCH+bm25/UNINDEXED/weighting/UTF-8/determinism → test-lead
+- [x] `config` module: `Config::load` + documented defaults + typed `ConfigError` → engineering-lead
+- [x] `storage`: schema (`symbols` FTS5, `files_metadata`, `index_state`), CRUD, migration, `Arc<Mutex<Connection>>` (D8) → engineering-lead + specialist (FTS5)
+- [x] Review (conditional APPROVE) → code-reviewer · perf note on FTS5 query plan: EXPLAIN QUERY PLAN to be captured at gate execution
+- Plan clarification this phase: **D11** (drop invalid `content='symbols'`; contentful FTS5 table) — recorded in ROADMAP Decision Log + project_plan §4.1.
+- **REOPEN #1 (2026-06-10):** `cargo build` failed — `Chunk.file_docstring` was missing from the `symbols` FTS5 schema/insert/search (D3 enrichment column omitted from §4.1 DDL). Fixed spec-first (§4.1 + ROADMAP D11 follow-up), added 3 RED tests (incl. docstring-only-searchable), added `file_docstring` as last indexed column (bm25 weights 6→7).
+- **Gates verified green on Rust 1.85.0 (2026-06-10):** `cargo build`, `cargo clippy --all-targets -- -D warnings`, `cargo test --all` (**31 passed**: 7 lib + 5 config + 1 smoke + 18 storage), `cargo fmt --all -- --check`.
 
 ## Phase 2 — hasher (M2) · plan: [plans/M2-hasher.md](plans/M2-hasher.md)
 - [ ] RED tests: deterministic hash, change detection → test-lead

@@ -325,6 +325,7 @@ CREATE VIRTUAL TABLE symbols USING fts5(
     parent_symbol,    -- D3: enclosing class/fn (indexed for recall)
     imports,          -- D3: import statements (indexed)
     cross_references, -- D3: referenced symbol names (indexed)
+    file_docstring,   -- D3: module/file-level docstring (indexed)
     file_path UNINDEXED,
     start_byte UNINDEXED,
     end_byte UNINDEXED,
@@ -441,6 +442,7 @@ CREATE VIRTUAL TABLE symbols USING fts5(
     parent_symbol,         -- Indexed (D3): enclosing class/fn for methods/nested defs
     imports,               -- Indexed (D3): import statements visible in the file
     cross_references,      -- Indexed (D3): referenced symbol names within the chunk
+    file_docstring,        -- Indexed (D3): module/file-level docstring (recall on file-intent queries)
     file_path UNINDEXED,   -- NOT indexed in FTS5 (retrieved after search)
     start_byte UNINDEXED,  -- Byte offset in file (for snippet extraction)
     end_byte UNINDEXED,
@@ -449,13 +451,16 @@ CREATE VIRTUAL TABLE symbols USING fts5(
     language UNINDEXED,    -- 'python', 'typescript', 'go'
     
     -- Tokenizer configuration
-    tokenize='unicode61 remove_diacritics 2',
-    
-    -- Content storage: keep content in FTS5 table
-    content='symbols',
-    
-    -- BM25 ranking configuration (optional tuning)
-    -- Default k1=1.2, b=0.75 works well for code
+    tokenize='unicode61 remove_diacritics 2'
+
+    -- NOTE (Decision Log D11): the original pseudo-DDL had `content='symbols'`, but in FTS5
+    -- `content=` names a *separate* external-content table — aiming it at this table's own name
+    -- is invalid. v0.1 uses a default (contentful) FTS5 table: FTS5 stores every column value and
+    -- returns it on SELECT, so chunks round-trip with no companion table. The list columns
+    -- `imports`/`cross_references` are stored as `\n`-joined text (FTS5 has no array type).
+    -- BM25 ranking uses FTS5 defaults k1=1.2, b=0.75 with per-column weights at query time
+    -- (symbol_name weighted highest). Revisit external-content at M10 only if the <100MB index
+    -- budget is threatened (§4.2 estimates ~6MB at Django scale).
 );
 
 -- ============================================================

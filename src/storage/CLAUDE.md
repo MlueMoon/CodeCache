@@ -16,5 +16,26 @@ is cheaply `Clone`-able and the MCP server can lend one connection to `Retriever
 `docs/TEST_STRATEGY.md#storage-sqlite--fts5` — idempotent schema; round-trip CRUD; `MATCH` +
 `bm25()` ordering; corrupt/locked DB → error not panic; empty-DB query → empty result.
 
+## Shipped API (M1)
+- `Storage { conn: Arc<Mutex<Connection>> }` (D8), `#[derive(Clone)]` (clones share one conn).
+- `new(&Path)`, `init_schema()` (idempotent; migrates older `index_state.version` forward),
+  `insert_chunks(&[Chunk])` (single transaction batch), `delete_chunks_for_file(&Path)`,
+  `search(&str, usize) -> Vec<SearchResult>` (BM25 best-first, deterministic `rowid` tie-break),
+  `get_file_hash`/`get_file_meta`, `update_file_hash(&Path, &FileMeta)` (D6 upsert),
+  `get_index_state`/`set_index_state`.
+- `SearchResult { chunk, bm25_score }`. `StorageError::{Sqlite, LockPoisoned, CorruptRow}` (typed,
+  impl `std::error::Error`; no reachable panic — poisoned lock & unknown stored enum are typed).
+
+## Schema / FTS5 notes (`schema.rs`, `queries.rs`)
+- Default (contentful) FTS5 `symbols` table — **D11** drops the invalid `content='symbols'` from
+  §4.1; FTS5 stores + returns all columns, so chunks round-trip without a companion table.
+- Indexed (D3): symbol_name, symbol_type, chunk_text, parent_symbol, imports, cross_references,
+  file_docstring (last indexed column — a term only in the module docstring is matchable).
+  UNINDEXED: file_path, start_byte, end_byte, start_line, end_line (D7), language.
+- `imports`/`cross_references` stored as `\n`-joined text (FTS5 has no array type).
+- `tokenize='unicode61 remove_diacritics 2'`; BM25 per-column weights (one per indexed column,
+  7 total) weight `symbol_name` highest (10.0), `parent_symbol` 5.0, the rest 2.0/1.0;
+  `file_docstring` weighted 2.0. `ORDER BY bm25 ASC, rowid ASC`.
+
 ## Status
-M0: empty stub. Implemented at M1.
+**M1: DONE (2026-06-10).** All four gates green on Rust 1.85.0 (18 storage tests pass).

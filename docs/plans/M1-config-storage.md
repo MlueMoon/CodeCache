@@ -51,10 +51,12 @@ forward dependency on `parser`, **introduce these types in a neutral location** 
   - `init_schema_twice_expects_no_error_idempotent`
   - `older_version_db_expects_migration_to_current` (seed `index_state.version` < current)
   - `corrupt_db_file_expects_typed_error_not_panic`
-- **GREEN:** `Storage::new(&Path)` opens/creates; `init_schema()` runs DDL from §4.1
-  (FTS5 `symbols` with `tokenize='unicode61 remove_diacritics 2'`, `files_metadata` + its two
-  indexes, `index_state` seeded). Use `CREATE TABLE IF NOT EXISTS` / `CREATE VIRTUAL TABLE IF
-  NOT EXISTS`; gate migration on `index_state.version`.
+- **GREEN:** `Storage::new(&Path)` opens/creates (wrapping `Arc<Mutex<Connection>>`, D8);
+  `init_schema()` runs DDL from §4.1 — FTS5 `symbols` with the D3 indexed columns
+  (`parent_symbol`/`imports`/`cross_references`), D7 `start_line`/`end_line` UNINDEXED, and
+  `tokenize='unicode61 remove_diacritics 2'`; `files_metadata` (incl. `file_size`/`chunk_count`/
+  `indexed_at`) + its two indexes; `index_state` seeded. Use `CREATE TABLE IF NOT EXISTS` /
+  `CREATE VIRTUAL TABLE IF NOT EXISTS`; gate migration on `index_state.version`.
 - **SPECIALIST (FTS5):** confirm `content='symbols'` external-content vs contentless trade-off;
   decide column set + which are `UNINDEXED` (§4.1). Document choice in `schema.rs` + brief.
 - **REVIEW / INTEGRATE.**
@@ -64,7 +66,8 @@ forward dependency on `parser`, **introduce these types in a neutral location** 
   - `insert_then_search_returns_inserted_chunk_with_fields` (assert all columns survive)
   - `bulk_insert_many_chunks_expects_all_present`
   - `delete_chunks_for_file_removes_only_that_files_chunks`
-  - `get_then_update_file_hash_round_trips_hash_mtime_size_lang`
+  - `update_then_get_file_hash_round_trips_filemeta` (assert hash via `get_file_hash`; verify
+    `file_size`/`chunk_count`/`language`/`mtime` persisted from the `FileMeta` arg — D6)
   - `empty_db_search_expects_empty_vec`
 - **GREEN:** `insert_chunks`, `delete_chunks_for_file`, `get_file_hash`, `update_file_hash` in
   `queries.rs`; wrap multi-row inserts in a transaction (batch — §11.1).
@@ -80,9 +83,11 @@ forward dependency on `parser`, **introduce these types in a neutral location** 
 - **PERF (note):** no formal budget yet, but record FTS5 query plan (`EXPLAIN QUERY PLAN`) so
   M6's latency budget has a baseline. Perf engineer logs it in the brief.
 
-## API contracts / data structures (from `../project_plan.md` §3.2.2 / §4)
+## API contracts / data structures (from `../project_plan.md` §3.2.2 / §4 — **source of truth**)
+The signatures below now mirror `project_plan.md` §3.2.2 verbatim, which already encodes the
+**ratified** D6 (`FileMeta`), D7 (line columns), and D8 (`Arc<Mutex<Connection>>`) decisions.
 ```rust
-pub struct Storage { /* conn: rusqlite::Connection */ }
+pub struct Storage { conn: Arc<Mutex<rusqlite::Connection>> }  // D8 — Storage is cheaply Clone
 impl Storage {
     pub fn new(db_path: &Path) -> Result<Self>;
     pub fn init_schema(&self) -> Result<()>;
@@ -90,16 +95,21 @@ impl Storage {
     pub fn delete_chunks_for_file(&self, file_path: &Path) -> Result<()>;
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>>;
     pub fn get_file_hash(&self, file_path: &Path) -> Result<Option<String>>;
-    pub fn update_file_hash(&self, file_path: &Path, hash: &str, mtime: u64) -> Result<()>;
+    pub fn update_file_hash(&self, file_path: &Path, meta: &FileMeta) -> Result<()>;  // D6
 }
 pub struct SearchResult { pub chunk: Chunk, pub bm25_score: f64 }
+// D6 — write-side bundle for files_metadata
+pub struct FileMeta {
+    pub content_hash: String, pub mtime: u64, pub file_size: u64,
+    pub language: Language, pub chunk_count: usize,
+}
 ```
-**SQL schema:** verbatim from §4.1 (`symbols` FTS5 + `files_metadata` w/ `file_size`,
+**SQL schema:** verbatim from §4.1 (`symbols` FTS5 with the **D3** indexed columns
+`parent_symbol`/`imports`/`cross_references`, **D7** `start_line`/`end_line` UNINDEXED, plus the
+existing UNINDEXED `file_path`/`start_byte`/`end_byte`/`language`; `files_metadata` w/ `file_size`,
 `chunk_count`, `indexed_at` + `idx_files_mtime`/`idx_files_language`; `index_state` seeded).
-**Note:** §4.1 `files_metadata` carries `file_size` and `chunk_count` that the §3.2.2
-`update_file_hash` signature omits — extend the signature to
-`update_file_hash(path, hash, mtime, file_size, chunk_count, language)` or take a small
-`FileMeta` struct. **Plan clarification D6 below.**
+**D6/D7 are ratified** (see ROADMAP Decision Log and project_plan §3.2.2/§4.1/§4.3) — implement to
+the §3.2.2 `FileMeta`/line-column form above; do **not** use the older `(path, hash, mtime)` shape.
 
 ## Performance budgets
 - No hard budget gates at M1. Forward-looking: FTS5 search must support M6's **p95 < 500ms on
