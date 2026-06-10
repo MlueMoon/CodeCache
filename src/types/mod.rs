@@ -45,6 +45,12 @@ pub struct Chunk {
     pub imports: Vec<String>,
     /// Referenced symbol names within the chunk.
     pub cross_references: Vec<String>,
+
+    // Graceful degradation (Decision Log D2):
+    /// `true` when this chunk came from the M4 line-heuristic fallback (the parser's ERROR rate
+    /// exceeded `HEURISTIC_FALLBACK_THRESHOLD`) rather than the AST path. AST- and
+    /// storage-reconstructed chunks are `false`.
+    pub is_heuristic: bool,
 }
 
 /// The kind of semantic unit a [`Chunk`] represents.
@@ -161,6 +167,7 @@ mod tests {
             file_docstring: Some("auth handlers".to_string()),
             imports: vec!["bcrypt".to_string()],
             cross_references: vec!["verify_password".to_string()],
+            is_heuristic: false,
         };
         assert_eq!(c.start_line, 45);
         assert_eq!(c.end_line, 67);

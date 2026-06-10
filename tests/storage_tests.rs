@@ -35,6 +35,7 @@ fn chunk(file: &str, name: &str, body: &str) -> Chunk {
         file_docstring: None,
         imports: Vec::new(),
         cross_references: Vec::new(),
+        is_heuristic: false,
     }
 }
 

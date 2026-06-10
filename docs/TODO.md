@@ -48,12 +48,24 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · → owner
   - Seam: parser only *reports* the fallback flag; M4 chunker owns heuristic emission + the `heuristic` flag.
 
 ## Phase 4 — chunker (M4) · plan: [plans/M4-chunker.md](plans/M4-chunker.md)
-- [ ] RED tests: non-overlap property; metadata enrichment fields → test-lead
-- [ ] `chunker` with enrichment (Decision D3) → engineering-lead + specialist
+- [x] RED tests: non-overlap property; metadata enrichment fields → test-lead
+      (10 integration + 3 proptest; `tests/chunker_tests.rs`, `tests/chunker_proptest.rs`).
+- [x] `chunker` with enrichment (Decision D3) + heuristic fallback (D2) → engineering-lead
+      - `chunk(tree, source, lang) -> Result<Vec<Chunk>>`; AST path enriches `parent_symbol`/
+        `file_docstring`/`imports`/`cross_references`; heuristic path flags `is_heuristic`.
+      - `Chunk` gained `is_heuristic: bool` (D2); recorded in project_plan.md §3.2.1/§4.3.
+      - Storage seam: M1 schema has no `is_heuristic` column — row→Chunk reconstructs `false`;
+        persisting the flag is a known M5/M7 follow-up (see `src/chunker/CLAUDE.md`).
+      - All four gates green (Rust 1.85.0); 74 existing/new + 2 chunker unit tests pass.
 
 ## Phase 5 — indexer (M5) · plan: [plans/M5-indexer.md](plans/M5-indexer.md)
 - [ ] RED tests: discovery/.gitignore; full index; incremental idempotency; delete → test-lead
 - [ ] `indexer` pipeline (discovery → parse → chunk → hash → store; incremental) → engineering-lead
+- [ ] **Perf follow-up (from M4 review):** `chunker::call_names_in_span` re-walks the whole tree
+      per chunk → O(chunks × tree_nodes) cross-reference enrichment, a deviation from the M4 plan's
+      "single-pass, no per-chunk re-query" budget. Correctness unaffected (no M4 budget breached).
+      Bucket all `call` nodes in one walk by containing span (O(nodes + chunks·log)); `perf` validates
+      against the §5.4 cold-index budget when M5 wires the pipeline. → engineering-lead + perf
 
 ## Phase 6 — retriever (M6) · plan: [plans/M6-retriever.md](plans/M6-retriever.md)
 - [ ] RED tests: BM25 ranking determinism; token-budget packing; empty/no-match → test-lead

@@ -13,6 +13,8 @@ directory holds the wider integration/E2E/property surface.
 |---|---|---|
 | `smoke_test.rs` | M0 smoke test: crate links; `codecache::VERSION == CARGO_PKG_VERSION`. | M0 |
 | `parser_tests.rs` | M3 parser integration: exact byte spans, method/decorator/nested, ERROR-rate (D2). | M3 |
+| `chunker_tests.rs` | M4 chunker integration: AST→Chunk, D3 enrichment, D2 heuristic fallback flag. | M4 |
+| `chunker_proptest.rs` | M4 property: spans in-bounds; chunks disjoint-or-nested; child contained in parent. | M4 |
 | `fixtures/` | Sample source trees / files used by integration + E2E tests (added as needed). | M3+ |
 
 ### `fixtures/python/` (M3 parser)
@@ -32,6 +34,7 @@ Minimal, purpose-built Python files loaded by `parser_tests.rs`. Span assertions
 | `crlf_function.py` | `def crlf_fn` with CRLF endings (span preserves `\r\n`). | **CRLF** |
 | `malformed.py` | one good fn + a broken `def broken(:` → some ERROR nodes (positive rate). | LF |
 | `high_error.py` | mostly garbage → ERROR-rate above `HEURISTIC_FALLBACK_THRESHOLD`. | LF |
+| `enriched_module.py` | module docstring + `import os`/`from typing import List` + `UserService.register` calling free fn `hash_password` (D3 enrichment: docstring/imports/cross_references). | LF |
 
 Integration tests for storage round-trips (M1), parser fixtures (M3), chunker non-overlap
 property (M4), indexer idempotency (M5), retriever ranking/budget (M6), formatter goldens +

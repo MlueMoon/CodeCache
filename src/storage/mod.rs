@@ -326,6 +326,10 @@ fn build_search_result(raw: RawSearchRow) -> Result<SearchResult> {
             file_docstring: raw.file_docstring,
             imports: split_joined(&raw.imports_joined),
             cross_references: split_joined(&raw.cross_joined),
+            // M1 schema has no is_heuristic column; storage round-trips only AST chunks, so the
+            // flag is reconstructed as false. Persisting it is a known M5/M7 follow-up (see
+            // src/chunker/CLAUDE.md "Storage-persistence seam").
+            is_heuristic: false,
         },
         bm25_score: raw.bm25_score,
     })

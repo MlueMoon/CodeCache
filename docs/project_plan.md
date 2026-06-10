@@ -235,6 +235,10 @@ pub struct Chunk {
     pub file_docstring: Option<String>, // module/file-level docstring
     pub imports: Vec<String>,           // import statements visible in the file
     pub cross_references: Vec<String>,  // referenced symbol names within the chunk
+
+    // Graceful degradation (Decision Log D2) — set true when the M4 chunker fell back to the
+    // line heuristic because the parser's ERROR rate exceeded HEURISTIC_FALLBACK_THRESHOLD.
+    pub is_heuristic: bool,
 }
 ```
 
@@ -580,6 +584,10 @@ pub struct Chunk {
     pub file_docstring: Option<String>,
     pub imports: Vec<String>,
     pub cross_references: Vec<String>,
+
+    // Graceful degradation (Decision Log D2): true when the chunk came from the M4 line-heuristic
+    // fallback (high parser ERROR rate) rather than the AST path. AST/storage chunks are `false`.
+    pub is_heuristic: bool,
 }
 
 pub enum SymbolType {

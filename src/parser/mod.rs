@@ -315,6 +315,8 @@ fn build_chunk(
         file_docstring: None,
         imports: Vec::new(),
         cross_references: Vec::new(),
+        // AST path: a well-formed extraction is never heuristic (M4 sets this true on fallback).
+        is_heuristic: false,
     })
 }
 
