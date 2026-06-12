@@ -2,7 +2,7 @@
 
 - **Milestone:** M7 — formatter + cli  ·  **Module(s):** `formatter`, `cli`, `main.rs`
 - **Owner (manager):** principal-engineering-manager  ·  **Created:** 2026-06-12
-- **Status (per slice):** M7.1 DONE (e360818) · M7.2 DONE (50e3eb0) · M7.3 RED ✓ GREEN ✓ REVIEW ✓ DONE ✓ (d0d6a0f) · M7.4 RED ▶
+- **Status (per slice):** M7.1 DONE (e360818) · M7.2 DONE (50e3eb0) · M7.3 DONE (d0d6a0f) · M7.4 DONE (5c8b3b8) · **M7 PHASE COMPLETE 2026-06-12**
 
 ## Manager notes for M7.3 (handlers + status) — real APIs the handlers delegate to
 - **init:** `codecache::init(project_root: &Path) -> Result<(), AppError>` — CLI passes the resolved
@@ -893,7 +893,39 @@ config/CLAUDE.md status already reflect M7.3). Consider filing the empty+text do
 
 
 ## OUTCOME — manager
-<per-slice: aligned? TODO + module CLAUDE.md updated? committed? follow-ups?>
+
+### M7 PHASE COMPLETE — 2026-06-12 (manager close)
+All four slices RED→GREEN→review→closed, one commit each, every slice reviewer-APPROVED with 0
+findings. Final state: **141 tests green**, all four gates clean on Rust 1.85 (fmt, clippy
+`-D warnings`, test --all, build). CI unchanged (no new deps beyond the D17 dev-deps mirrored in
+M7.2; new test files auto-discovered).
+
+| Slice | Commit | Aligned to plan? | Docs updated in-change |
+|---|---|---|---|
+| M7.1 formatters | `e360818` | Yes — §6.4; D7 (stored lines, no file reads); D13 text-only; TOON locator-only | `src/formatter/CLAUDE.md`, `src/lib.rs`, `docs/TODO.md` |
+| M7.2 CLI parsing | `50e3eb0` | Yes — §7.1–7.2 exact flags/defaults; ValueEnum bad-arg→nonzero | `src/cli/CLAUDE.md`, `docs/TODO.md`, `Cargo.toml`/`Cargo.lock` (D17) |
+| M7.3 handlers+status | `d0d6a0f` | Yes — real delegation; **D18** `Config::save`; status defers timestamps/symbol_type (no schema change) | `src/cli/CLAUDE.md`, `src/config/CLAUDE.md`, `docs/{project_plan,ROADMAP,TODO}.md` |
+| M7.4 e2e binary | `5c8b3b8` | Yes — ROADMAP M7 exit criteria met end-to-end; verification-only | `docs/{TODO,ROADMAP}.md`, `tests/CLAUDE.md` |
+
+**Spec changes made (plan-first, golden rule honored):** D18 (additive `Config::save` +
+`ConfigError::Serialize`) recorded in ROADMAP + project_plan §7.2 `config` block before implementing;
+project_plan §7.2 notes the empty-text CLI behavior.
+
+**Deviations recorded (none weakened a test):**
+1. M7.1 text score uses `{:.2}` (golden authority — `-1.20` not `-1.2`); JSON keeps raw f64.
+2. M7.3 empty-result + text format prints `No results found.` instead of the formatter's
+   query-echoing empty header — a CLI UX choice; the pure formatter empty-text golden is unchanged;
+   JSON/TOON always render through the formatter. Documented in §7.2, `src/cli/CLAUDE.md`, reviewer-endorsed.
+
+**Open follow-ups (deferred, not blocking M7):**
+- (a) `status` Created/Last-index timestamps + per-symbol_type counts are not stored — a future
+  slice (or M8) can add the schema columns + populate. Tracked here + in `src/cli/CLAUDE.md`.
+- (b) `--file-filter` ships as a single-entry exact-`PathBuf` post-filter (no glob expansion) in v0.1.
+- (c) M8's `codecache_outline` reuses the M7.1 text skeleton-line shape (one-line signature).
+
+Next: **M8 — mcp_server** (entry: D15 `rmcp` vs hand-rolled spike + version pin; `serve` becomes real).
+
+<per-slice reviewer verdicts below>
 
 ### M7.4 — e2e binary — VERDICT: APPROVE (2026-06-12, code-reviewer)
 

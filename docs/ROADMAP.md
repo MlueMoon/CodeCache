@@ -49,7 +49,7 @@ A milestone is *done* only when its exit criteria are met under the Definition o
 - **Exit**: ranking deterministic; `--max-tokens` respected exactly; empty/no-match queries
   handled; latency bench wired (perf engineer).
 
-### M7 — `formatter` + `cli`  · **DONE 2026-06-12** (M7.1 e360818 · M7.2 50e3eb0 · M7.3 d0d6a0f · M7.4 commit pending)
+### M7 — `formatter` + `cli`  · **DONE 2026-06-12** (M7.1 e360818 · M7.2 50e3eb0 · M7.3 d0d6a0f · M7.4 5c8b3b8)
 - **Work**: TOON/JSON/text formatters; `clap` commands `init/index/update/query/status/config/serve`;
   **agent-first output ordering** (signature/skeleton before bodies — D13, text format; TOON locator-only).
 - **Exit** ✓: golden-output tests per format (6, JSON round-trips); CLI arg parsing + error/exit-code
