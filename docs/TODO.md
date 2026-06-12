@@ -133,12 +133,19 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       +5 config +4 e2e +11 hasher +15 indexer +14 parser +1 smoke +18 storage), `cargo build`.
       **DONE 2026-06-11.**
       brief: [.claude/briefs/BRIEF-M6.1-query-preprocessing.md](../.claude/briefs/BRIEF-M6.1-query-preprocessing.md)
-- [ ] **M6.2 BM25 search + determinism + dedup** — RED (relevant>irrelevant, deterministic order +
-      stable tie-break, no-match empty, overlapping-span dedup, file_filter) → test-lead; execute
-      `storage.search` + stable order + dedup + `file_filter`; **D1 trait lands here** (deferred from
-      M6.1) — introduce `trait Retrieve` + `Retriever` struct driven by `new`/`query` RED; `query`
-      short-circuits an empty `preprocess_query` to an empty `QueryResult` (never `MATCH ""`)
-      → engineering-lead + **rust-treesitter-specialist** (FTS5/BM25 query-plan/weights) → reviewer.
+- [x] **M6.2 BM25 search + determinism + dedup** — RED (`tests/retriever_tests.rs`, 7 tests:
+      relevant>irrelevant, deterministic order + stable `(file_path,start_byte)` tie-break, no-match
+      empty, empty/all-stopword short-circuit, empty-DB, overlapping-span dedup, file_filter) →
+      GREEN: **D1 trait landed** — `trait Retrieve` + `Retriever { storage }` (`new`/`query`);
+      `QueryOptions`/`QueryResult`/`RetrieverError` per §3.2.3; `query` = preprocess → short-circuit
+      empty (never `MATCH ""`) → parameterized `storage.search` → `total_cmp` stable sort → file
+      post-filter → dedup (partial-overlap/equal; **containment preserved** so nested method/class
+      both survive) → assemble. Removed the 4 M6.1 `#[allow(dead_code)]`. `total_tokens=0` (budget is
+      M6.3). Specialist (FTS5/BM25): parameterized MATCH + native bm25 weights sound; dedup-after-LIMIT
+      a correct safety net. Reviewer **APPROVED**. **All four gates verified green on Rust 1.85.0
+      (2026-06-11):** `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings`,
+      `cargo test --all` (**111 passed**: 23 lib +7 retriever +3 chunker_proptest +10 chunker +5 config
+      +4 e2e +11 hasher +15 indexer +14 parser +1 smoke +18 storage), `cargo build`. **DONE 2026-06-11.**
       brief: [.claude/briefs/BRIEF-M6.2-bm25-search-dedup.md](../.claude/briefs/BRIEF-M6.2-bm25-search-dedup.md)
 - [ ] **M6.3 token budget packing** — RED (never exceeds max_tokens, greedy stops keeping top-ranked,
       total_tokens = sum packed, total_results_found = pre-budget, estimate_tokens = len/4 min 1) →
