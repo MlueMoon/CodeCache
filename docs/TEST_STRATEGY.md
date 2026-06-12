@@ -81,14 +81,19 @@ this document is the source for "what scenarios must a slice cover" referenced b
 
 ### formatter
 - Golden outputs for TOON, JSON, plaintext; JSON is valid and round-trips; file:line pairs correct.
+- Agent-first ordering (D13): signature/skeleton lines precede bodies; bodies only within budget.
 
 ### cli
 - Each command parses expected args/flags; `--help`/`--version`; bad args ⇒ helpful error + nonzero exit.
 - E2E: `init → index → query` through the built binary on a fixture repo.
 
 ### mcp_server
-- JSON-RPC handshake; tool registration list; `query` tool round-trip vs mock client; malformed
+- JSON-RPC handshake; tool registration list (all three tools — `codecache_search`,
+  `codecache_update`, `codecache_outline`); `search` tool round-trip vs mock client; malformed
   request ⇒ proper JSON-RPC error.
+- `codecache_outline` returns the symbol skeleton from the index (no source reads — D7/D13).
+- Self-healing search (D14): query after an out-of-band file edit returns fresh content;
+  unchanged files ⇒ no re-index writes; result file deleted on disk ⇒ dropped, no panic.
 
 ---
 

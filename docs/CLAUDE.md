@@ -5,6 +5,7 @@
 ## Doc map
 | File | Role |
 |---|---|
+| `../project_overview.md` | Director's assessment (2026-06-11): repositioning (index-as-tool), landscape research, evaluation design, research track R1–R4. Source of ROADMAP D12–D16. |
 | `project_plan.md` | Product + architecture spec (the *what/why*). Images in `assets/`. |
 | `ENGINEERING_PLAN.md` | Team, module ownership, build order, TDD workflow, Definition of Done, quality gates. |
 | `ROADMAP.md` | M0–M10 milestones with entry/exit criteria + the **Decision Log**. |

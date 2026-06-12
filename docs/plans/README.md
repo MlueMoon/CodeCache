@@ -22,7 +22,7 @@ before a slice; the per-slice hand-off blackboard remains `.claude/briefs/BRIEF-
    PERF (if applicable) → REVIEW (code-reviewer) → INTEGRATE (manager).
 6. **API contracts / data structures** — from `../project_plan.md` §3.2 / §4.
 7. **Performance budgets** — from `../project_plan.md` §5.4 / §11 + `../TEST_STRATEGY.md`.
-8. **Decision Log bindings** — which D1–D4 dispositions this milestone must honor.
+8. **Decision Log bindings** — which Decision Log dispositions (D1–D16) this milestone must honor.
 9. **Definition of Done** — the per-milestone checklist.
 
 ## Index
@@ -39,6 +39,12 @@ before a slice; the per-slice hand-off blackboard remains `.claude/briefs/BRIEF-
 | [M8-mcp-server.md](M8-mcp-server.md) | M8 — mcp_server | `mcp_server` | M6, M7 |
 | [M9-typescript-go.md](M9-typescript-go.md) | M9 — TypeScript + Go | `parser` (TS/Go) | M3, M4, M5 |
 | [M10-benchmarks-release.md](M10-benchmarks-release.md) | M10 — Benchmarks + Release | `benches/`, release | all |
+
+**Replan 2026-06-11** ([`../../project_overview.md`](../../project_overview.md), ROADMAP D12–D16):
+M7 adds agent-first output ordering (D13); M8 adds the `rmcp` entry spike (D15, slice M8.0),
+`codecache_outline` (D13), and self-healing search (D14, slice M8.4); M10's token-reduction
+benchmark is replaced by Layer-1 gold-context scoring (D16). The post-M8 **research track
+(R1–R4)** is tabled in `../ROADMAP.md`; per-milestone R-plans will be written when R1 is briefed.
 
 ## Critical path
 ```

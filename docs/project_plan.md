@@ -37,11 +37,22 @@ CodeCache is a **local-first, AST-driven context retrieval engine** that:
 * **Hybrid-ready**: Pure AST for v0.1; optional embeddings in v0.2 for semantic queries
 * **CLI-native**: Zero-config `codecache query "find auth logic"` command, not an IDE plugin
 
+> **Positioning update (2026-06-11 — ROADMAP D12; full analysis in
+> [`../project_overview.md`](../project_overview.md)).** The product sentence is now:
+> *CodeCache is a zero-dependency, deterministic code index that coding agents call as a tool —
+> replacing N rounds of grep with one structured lookup, with no embedding model, vector
+> database, language server, or cloud account.* Three consequences: (1) **the agent is the
+> user**, not the human — tool descriptions, output ordering, and result granularity are
+> optimized for the agent's next action (D13); (2) **freshness is answered structurally** via
+> self-healing search (D14); (3) we **compose with grep-in-a-loop rather than replace it** —
+> the evaluation baseline is agentic search, not "context dumping" (D16). The architecture is
+> unchanged; the framing and the evaluation design (§1.3, §9.3) are what changed.
+
 ### 1.3 Success Criteria (v0.1)
 
 | **Metric**           | **Target**                    | **Validation**                                      |
 | -------------------- | ----------------------------- | --------------------------------------------------- |
-| Token reduction      | ≥40% on function-lookup tasks | Benchmark against Claude Code on 5 real tasks       |
+| Token/turn economy   | Fewer tokens + tool turns than grep-only agentic search at matched retrieval recall, with CIs (D16) | ContextBench-Lite gold-context scoring + agent-in-loop study (research track R1–R3; `project_overview.md` §5) |
 | Query latency        | <500ms (p95)                  | 100K LOC monorepo, cold SQLite cache                |
 | Index overhead       | <100MB                        | Django codebase (2,910 files, \~450K LOC)           |
 | Incremental re-index | <2s for 10-file change        | Modify 10 Python files, measure total re-index time |
@@ -1271,7 +1282,15 @@ sse_port = 3000
 
 ### 8.2 MCP Server Implementation
 
-The Model Context Protocol (MCP) is Anthropic's standard for connecting AI tools. CodeCache will expose two MCP tools:
+The Model Context Protocol (MCP) is Anthropic's standard for connecting AI tools. CodeCache will expose three MCP tools.
+
+**Agent-first output ordering (D13).** Tool output is ordered for the *agent's* next action:
+symbol name, qualified parent, `file:start-end`, and a one-line signature first; full bodies
+only within the remaining token budget. The formatter (§6.4) realizes this ordering.
+
+**Self-healing search (D14).** Before answering, `codecache_search` hash-checks the files
+implicated by the top results (cheap — hashes are stored, §4.4) and transparently re-indexes
+any that changed, so results are correct-by-construction and never stale.
 
 #### Tool 1: `codecache_search`
 
@@ -1346,6 +1365,34 @@ The Model Context Protocol (MCP) is Anthropic's standard for connecting AI tools
   }
 }
 ```
+
+#### Tool 3: `codecache_outline` (D13)
+
+```json
+{
+  "name": "codecache_outline",
+  "description": "Return the symbol skeleton (functions, classes, methods with signatures and line ranges) of a file or directory. The cheapest way to orient in unfamiliar code before reading bodies.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "File or directory path to outline (relative to the indexed root)"
+      },
+      "max_tokens": {
+        "type": "integer",
+        "description": "Maximum tokens to return",
+        "default": 2000
+      }
+    },
+    "required": ["path"]
+  }
+}
+```
+
+Outline rows come straight from the index (`symbols`: symbol name, type, `parent_symbol`,
+`start_line`/`end_line` — D7), so no source files are read at query time. This is the
+repo-map primitive aider validated; for CodeCache it is one indexed lookup.
 
 ### 8.3 MCP Server Pseudocode
 
@@ -1525,7 +1572,7 @@ Claude Code (to user):
 
 | **Metric**      | **Measurement Method**                         | **Pass Criteria**           |
 | --------------- | ---------------------------------------------- | --------------------------- |
-| Token reduction | Benchmark 5 tasks with/without CodeCache       | ≥40% average reduction      |
+| Token/turn economy (D16) | ContextBench-Lite gold-context scoring (Layer 1) + same-agent tool-swap study (Layer 2; research track R1–R3, `project_overview.md` §5) | Dominance over grep-only at matched retrieval recall, with bootstrap CIs |
 | Query latency   | Measure p50, p95, p99 on 100K LOC repo         | p95 <500ms                  |
 | Index size      | Measure SQLite DB size for Django codebase     | <100MB                      |
 | User adoption   | GitHub stars + npm/crates downloads (3 months) | >500 stars OR >1K downloads |
@@ -1550,7 +1597,7 @@ Claude Code (to user):
 | **Hashing**   | xxHash3-128 (`xxhash-rust`) | 10× faster than SHA-256, sufficient collision resistance                                |
 | **CLI**       | `clap` v4                   | Derive-based API, auto-generated help, robust arg parsing                               |
 | **JSON**      | `serde_json`                | De-facto Rust JSON library                                                              |
-| **MCP**       | Custom (no SDK yet)         | MCP spec is JSON-RPC over stdio; implement manually                                     |
+| **MCP**       | Official Rust SDK (`rmcp`) **to evaluate at M8 entry** (D15) | An official MCP Rust SDK now exists (modelcontextprotocol org); evaluate API stability and pin a version, else fall back to hand-rolled JSON-RPC over stdio |
 
 ### 10.3 Key Dependencies (Rust `Cargo.toml`)
 
@@ -1868,7 +1915,10 @@ CREATE INDEX idx_callee ON call_graph(callee_symbol, callee_file);
 
 * ⚠️ **Semantic gap** (30-40% of queries need embeddings, deferred to v0.2)
 * ⚠️ **Maintenance burden** (Tree-sitter grammar fragility, multi-language support)
-* ⚠️ **Competitive risk** (Anthropic could build this natively into Claude Code)
+* ⚠️ **Competitive/crowding risk** — agentic (grep-in-a-loop) search is the industry default,
+  and the adjacent niches are taken (claude-context: cloud/embedding hybrid; Serena: LSP-based).
+  CodeCache's wedge is **zero-dependency determinism + self-healing freshness** — neither
+  competitor can structurally follow. Landscape analysis: `../project_overview.md` §2/§7.
 
 **Recommendation for v0.1:**
 

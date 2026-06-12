@@ -1,18 +1,24 @@
 # CodeCache
 
-**Local-first, AST-driven code-context retrieval for terminal AI workflows.**
+**A zero-dependency, deterministic code index that coding agents call as a tool.**
 
 CodeCache parses your codebase into semantic units (functions, classes, methods) with
 Tree-sitter, indexes them in SQLite + FTS5, and retrieves only the relevant snippets at query
-time — concentrated, token-budgeted context for AI agents instead of dumping whole files.
+time — replacing N rounds of grep with one structured, token-budgeted lookup. No embedding
+model, no vector database, no language server, no cloud account: one Rust binary, one `.db`
+file, works air-gapped. Grep-in-a-loop is excellent; CodeCache composes with it and earns its
+keep where a structured index saves the agent turns and tokens.
 
 - **Deterministic** — AST boundaries, not drifting embeddings.
-- **Incremental** — re-index only changed files (xxHash).
-- **CLI-native** — `codecache query "find auth logic"`, plus an MCP server for Claude Code.
+- **Always fresh** — incremental re-index via xxHash; self-healing search re-indexes stale
+  files transparently at query time.
+- **Agent-first** — MCP tools (`codecache_search`, `codecache_update`, `codecache_outline`)
+  with output ordered for the agent's next action; CLI-native too.
 - **v0.1 scope** — Python, TypeScript, Go. AST + BM25 (embeddings deferred to v0.2).
 
-> Status: **pre-implementation.** The architecture is specified and the engineering process is
-> set up; module implementation follows the milestones in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+> Status: **in development** (M0–M5 done; M6 retriever in progress). Milestones in
+> [`docs/ROADMAP.md`](docs/ROADMAP.md); positioning, landscape research, and the R1–R4
+> research track in [`project_overview.md`](project_overview.md).
 
 ## Quickstart (target UX)
 ```bash

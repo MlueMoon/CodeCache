@@ -50,23 +50,48 @@ A milestone is *done* only when its exit criteria are met under the Definition o
   handled; latency bench wired (perf engineer).
 
 ### M7 — `formatter` + `cli`
-- **Work**: TOON/JSON/text formatters; `clap` commands `init/index/update/query/status/config/serve`.
+- **Work**: TOON/JSON/text formatters; `clap` commands `init/index/update/query/status/config/serve`;
+  **agent-first output ordering** (signature/skeleton before bodies — D13).
 - **Exit**: golden-output tests per format; CLI arg parsing + error messages tested; e2e
   `init→index→query` through the binary.
 
 ### M8 — `mcp_server`
-- **Work**: stdio JSON-RPC MCP adapter; tool registration; `serve` command.
-- **Exit**: protocol handshake + tool-call round-trip tested against a mock client.
+- **Entry**: evaluate the official MCP Rust SDK (`rmcp`) vs hand-rolled JSON-RPC; pin a version
+  either way (D15).
+- **Work**: stdio MCP adapter; tool registration (`codecache_search`, `codecache_update`,
+  `codecache_outline` — D13); **self-healing search** (hash-check + transparent re-index of
+  result files at query time — D14); `serve` command.
+- **Exit**: protocol handshake + tool-call round-trip tested against a mock client; all three
+  tools registered; a query against a stale file returns fresh content (D14 test).
 
 ### M9 — TypeScript + Go parsers
 - **Work**: add `tree-sitter-typescript` and `tree-sitter-go` configs + queries.
 - **Exit**: per-language fixture suites green; language coverage = Python/TS/Go.
 
 ### M10 — Benchmarks + Release
-- **Work**: criterion suite vs all budgets; token-reduction benchmark (5 tasks); release
-  workflow; crates.io publish.
-- **Exit**: budgets met (p95<500ms, index<100MB, incr<2s, ≥40% token reduction); `v0.1.0`
-  tagged and published; install smoke test passes.
+- **Work**: criterion suite vs all systems budgets; **Layer-1 retrieval-quality scoring**
+  (ContextBench-Lite gold contexts + hand-verified micro-suite — D16 replaces the old
+  "5 real tasks" benchmark); release workflow; crates.io publish.
+- **Exit**: systems budgets met (p95<500ms, index<100MB, incr<2s); Layer-1 retrieval metrics
+  recorded (the Layer-2 token-economy headline is the research track's R3 exit, not a release
+  gate); `v0.1.0` tagged and published; install smoke test passes.
+
+---
+
+## Research track (post-M8; M9 can interleave) — `project_overview.md` §5–§6
+
+The measurement study the repositioning (D12) is built on: a controlled, same-agent comparison
+of retrieval *interfaces* (grep-only vs index-as-tool vs embedding-as-tool) under explicit token
+budgets. Arms A0–A5, three metric layers (retrieval quality / token & turn economy / systems
+costs), and the experiment matrix are specified in `project_overview.md` §5. Budget: ~$1K API
+spend (R3). Kill criterion and null-result handling: `project_overview.md` §7.
+
+| Milestone | Work | Exit criteria |
+|---|---|---|
+| **R1 — Harness** | Minimal agent loop (or mini-SWE-agent fork) with pluggable retrieval tools; trajectory logging; ContextBench gold-context scorer | One task runs end-to-end in A0/A1/A4; metrics computed from logs |
+| **R2 — Offline ablations** | Layer-1 sweeps: chunking × ranking × enrichment on ContextBench-Lite + RepoEval slice | Published BM25 baselines reproduced within tolerance; top configs picked |
+| **R3 — Agent-in-loop study** | Full matrix on 30–50 tasks; promote winners to 100; budget/scale sweeps | RQ1–RQ3 plots with CIs; raw trajectories published |
+| **R4 — Write-up & release** | Preprint + artifact (binary, harness, data); blog distillation; one workshop submission | arXiv live; artifact reproduces the headline figure from a clean machine |
 
 ---
 
@@ -195,6 +220,47 @@ indexed-column count 6→7, so the `bm25()` per-column weight list grows by one 
 (`file_docstring` weighted modestly, like `parent_symbol`). No schema-version bump: M1 is not yet
 released (the pre-release schema is being corrected in place). Owner: manager (spec) +
 rust-treesitter-specialist (FTS5 weights).
+
+**Ratified 2026-06-11** (director's assessment + landscape research —
+[`../project_overview.md`](../project_overview.md)): D12–D16 below adopt the report's
+repositioning and its four plan deltas (Δ1–Δ4). M0–M10 architecture and build order stand;
+these change framing, two tool-surface additions, one M8 entry check, and the M10 evaluation.
+
+### D12 — Repositioning: index-as-tool inside the agent's search loop  · **Adopted for v0.1** — *overview §2–§3*
+The original framing ("indexed retrieval replaces context dumping") is stale: agentic
+grep-in-a-loop search won the default (Claude Code A/B-tested RAG and dropped it), and the
+frontier moved to hybrid/trained retrieval. CodeCache's claim is now: **a zero-dependency,
+deterministic code index that agents call as a tool — replacing N rounds of grep with one
+structured lookup** ("the SQLite of code context"). The agent is the user; we compose with grep,
+not compete with it. Architecture unchanged (MCP is already the loop-tool interface); framing +
+evaluation change (D16). Spec §1.2/§1.3 updated.
+
+### D13 — `codecache_outline` tool + agent-first output ordering (Δ1)  · **Adopted for v0.1** (plan: M7/M8) — *overview §3, §6*
+Add a third MCP tool returning the symbol skeleton of a file/directory straight from the index
+(name, type, parent, line ranges — D7 makes it zero-read), and order all tool/format output
+agent-first: signature/skeleton before bodies, bodies only within budget. Spec §8.2 updated.
+
+### D14 — Self-healing search (Δ2)  · **Adopted for v0.1** (plan: M8; seam noted in M6) — *overview §3, §6*
+Staleness is the strongest anti-index argument; kill it structurally. Before answering,
+`codecache_search` hash-checks files implicated by the top results (hashes already stored — §4.4)
+and transparently re-indexes changed ones. Scheduled at **M8** (where search is served; M6 is
+mid-flight and its scope is frozen) — the retriever keeps results carrying `file_path` so the
+server can hash-check without new retriever API. Spec §8.2 updated. Adds the *staleness window*
+metric (overview §5.2 Layer 3).
+
+### D15 — Evaluate official MCP Rust SDK `rmcp` (Δ3)  · **Adopted** (plan: M8 entry) — *overview §2.5*
+Spec §10.2's "Custom (no SDK yet)" assumption is stale: an official MCP Rust SDK (`rmcp`,
+modelcontextprotocol org) now exists. At M8 entry, spike it for API stability; adopt and pin a
+version if sound, else keep the hand-rolled JSON-RPC plan. New dep needs manager sign-off per
+engineering standards. Spec §10.2 updated.
+
+### D16 — Benchmark-suite evaluation replaces "5 real tasks" (Δ4)  · **Adopted** (plan: M10 + research track) — *overview §4–§5*
+The "≥40% token reduction on 5 tasks" criterion convinces nobody (claude-context markets the
+same number) and benchmarks the wrong baseline (file dumping instead of grep-in-a-loop). v0.1
+success becomes: **Layer-2 dominance over grep-only (arm A0) at matched Layer-1 retrieval
+recall, with bootstrap CIs**, measured per overview §5 (ContextBench-Lite, three metric layers,
+arms A0–A5). M10 keeps the systems budgets as release gates and adds Layer-1 scoring; the
+Layer-2 headline is the research track's R3 exit. Spec §1.3/§9.3 tables updated.
 
 ---
 

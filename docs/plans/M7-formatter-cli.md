@@ -83,6 +83,10 @@ whole pipeline is usable from the binary. **Exit (from ROADMAP):**
 - **D4 (transport-agnostic):** formatter is pure (`QueryResult` → string); CLI is one adapter,
   MCP (M8) another. No retrieval logic in CLI/formatter.
 - **D1:** `query --enable-embeddings` flag may be accepted and warn (low recall) — no logic.
+- **D13 (agent-first output ordering — replan 2026-06-11):** TOON/text order each result
+  agent-first — symbol name, qualified parent, `file:start-end`, one-line signature *before*
+  bodies; bodies only within the remaining budget (spec §8.2 ordering note). Golden outputs in
+  M7.1 must encode this ordering. M8's `codecache_outline` reuses the skeleton-line formatter.
 
 ## Definition of Done (this phase)
 - [ ] M7.1–M7.4 green incl. golden outputs + binary E2E.

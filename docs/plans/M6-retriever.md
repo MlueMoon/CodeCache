@@ -87,6 +87,9 @@ SQL `file_path` filter) — keep behavior documented; M7 CLI maps `--file-filter
   low-recall warning (no embeddings logic in v0.1). Keep the trait minimal.
 - **D4 (transport-agnostic):** `Retriever::query` returns structured `QueryResult` — formatting
   and transport (CLI/MCP/HTTP) live downstream, so the core stays adapter-agnostic.
+- **D14 (self-healing search — replan 2026-06-11):** lands at **M8**, not here (M6 scope frozen
+  mid-flight). M6's only obligation is the seam: result chunks keep `file_path` (already true)
+  so the M8 server can hash-check + re-index result files without new retriever API.
 
 ## Definition of Done (this phase)
 - [ ] M6.1–M6.4 green; budget never exceeded; determinism + dedup asserted.

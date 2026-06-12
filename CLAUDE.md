@@ -1,13 +1,16 @@
 # CodeCache — CLAUDE.md (root)
 
-CodeCache is a **local-first, AST-driven code-context retrieval engine** for terminal AI
-workflows: a Rust CLI that parses code with Tree-sitter, indexes semantic units in SQLite +
-FTS5, retrieves only relevant snippets (BM25, token-budgeted), and serves them to agents via
-stdout or an MCP server. v0.1 targets Python/TS/Go. Full spec: [`docs/project_plan.md`](docs/project_plan.md).
+CodeCache is a **zero-dependency, deterministic code index that coding agents call as a tool**
+— replacing N rounds of grep with one structured lookup: a Rust CLI that parses code with
+Tree-sitter, indexes semantic units in SQLite + FTS5, retrieves only relevant snippets (BM25,
+token-budgeted), and serves them to agents via stdout or an MCP server. No embedding model,
+vector DB, language server, or cloud account; it composes with agentic grep search, not against
+it. v0.1 targets Python/TS/Go. Full spec: [`docs/project_plan.md`](docs/project_plan.md);
+positioning + research track: [`project_overview.md`](project_overview.md) (ROADMAP D12–D16).
 
 ## How we work here — read these first
 - [`docs/ENGINEERING_PLAN.md`](docs/ENGINEERING_PLAN.md) — team, module ownership, build order, **TDD workflow**, Definition of Done.
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — M0–M10 milestones + Decision Log.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — M0–M10 milestones + research track (R1–R4) + Decision Log.
 - [`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md) — the test scenario matrix.
 - [`docs/TODO.md`](docs/TODO.md) — the living checklist (start here to see what's next).
 

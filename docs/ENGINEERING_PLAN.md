@@ -2,7 +2,9 @@
 
 The *how* of building CodeCache. The *what/why* lives in [`project_plan.md`](project_plan.md);
 milestones in [`ROADMAP.md`](ROADMAP.md); the test scenario matrix in
-[`TEST_STRATEGY.md`](TEST_STRATEGY.md); the live checklist in [`TODO.md`](TODO.md).
+[`TEST_STRATEGY.md`](TEST_STRATEGY.md); the live checklist in [`TODO.md`](TODO.md). The
+strategic positioning + research track (D12–D16, R1–R4) live in
+[`../project_overview.md`](../project_overview.md).
 
 This project is built **test-first (TDD)** by a coordinated agent team. Every production line
 exists to satisfy a test written before it.
@@ -53,6 +55,7 @@ Dependency-ordered milestones (see `ROADMAP.md` for entry/exit criteria):
 | M8 | `mcp_server` (stdio JSON-RPC) | cli/retriever |
 | M9 | `parser` TypeScript + Go | parser (Python) |
 | M10 | benchmarks + release | all |
+| R1–R4 | research track: eval harness → offline ablations → agent-in-loop study → write-up (ROADMAP "Research track"; `project_overview.md` §5–§6) | M8 (M9 can interleave) |
 
 ---
 
