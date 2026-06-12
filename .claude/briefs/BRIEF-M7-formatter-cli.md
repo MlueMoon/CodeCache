@@ -2,7 +2,7 @@
 
 - **Milestone:** M7 — formatter + cli  ·  **Module(s):** `formatter`, `cli`, `main.rs`
 - **Owner (manager):** principal-engineering-manager  ·  **Created:** 2026-06-12
-- **Status (per slice):** M7.1 RED ▢ GREEN ▢ REVIEW ▢ DONE ▢ · M7.2 ▢ · M7.3 ▢ · M7.4 ▢
+- **Status (per slice):** M7.1 RED ✓ GREEN ✓ REVIEW ✓ DONE ✓ (commit e360818) · M7.2 RED ▶ · M7.3 ▢ · M7.4 ▢
 - **Links:** docs/plans/M7-formatter-cli.md · docs/ROADMAP.md#m7--formatter--cli ·
   docs/TEST_STRATEGY.md#formatter / #cli · project_plan.md §6.4 (formats) / §7 (CLI) / §8.2 (D13 ordering)
 - **Routing:** manager → test-lead (RED) → engineering-lead (GREEN; route any FTS5/skeleton-line
@@ -212,6 +212,82 @@ honest outcome is GREEN: `cargo test --test formatter_tests` → **6 passed; 0 f
 goldens). No assertion failure surfaced — formatter output matches every golden. Slice unblocked;
 hand back to manager/reviewer. Not committed.
 
+### M7.2 — CLI parsing + errors + exit codes — RED landed 2026-06-12
+
+**Tests added — `tests/cli_tests.rs`** (5 tests, named exactly per the slice). They drive the
+BUILT binary via `assert_cmd::Command::cargo_bin("codecache")` and match stdout/stderr/exit codes
+with `predicates`. All assertions are at the *parsing* layer (only `--help`, which clap handles
+before any handler, or clap's own type/enum/required-arg validation) — no command-handler logic is
+exercised (that is M7.3; full E2E is M7.4):
+
+1. `each_command_parses_its_documented_flags` — for each of init/index/update/query/status/config/
+   serve, `<cmd> --help` exits 0 and the help text contains that command's documented flag names.
+2. `query_defaults_match_spec` — `query --help` advertises `4000`, `20`, `text`, and the
+   `toon|json` value set (defaults pinned via help, not by executing the handler).
+3. `help_and_version_flags_work` — top-level `--help` and `-h` exit 0 and list all 7 subcommands;
+   `--version` and `-V` exit 0 and print `env!("CARGO_PKG_VERSION")` (`0.1.0`); global
+   `--verbose`/`-v` appears in top-level help.
+4. `bad_args_exit_nonzero_with_message` — `query needle --max-tokens notanumber` (type error),
+   `serve --transport bogus` (enum error), and bare `query` (missing required `<QUERY>`) each exit
+   nonzero with non-empty stderr.
+5. `unknown_command_errors_cleanly` — `codecache frobnicate` exits nonzero, stderr names
+   `frobnicate`, and neither stream contains `panicked` (no Rust panic).
+
+**Exact CLI surface pinned (eng-lead: implement clap derive to match §7.1–§7.2 verbatim):**
+- Top-level `codecache <COMMAND> [OPTIONS]`; global `-h/--help`, `-V/--version`, `-v/--verbose`;
+  binary `version` = `env!("CARGO_PKG_VERSION")`; unknown subcommand → clap error (nonzero).
+- `init`: `--db-path <PATH>` [default `.codecache/index.db`], `--index-path <PATH>` (multiple)
+  [default `.`], `--ignore <PATTERN>` (multiple), `--languages <LANG,...>` [default
+  `python,typescript,go`].
+- `index`: `--full`, `--db-path <PATH>` [default `.codecache/index.db`], `--progress`.
+- `update <FILE>...`: one-or-more positional `FILE` args (glob-capable), `--db-path <PATH>`
+  [default `.codecache/index.db`].
+- `query <QUERY>`: required positional `QUERY`; `--max-tokens <N>` [default `4000`],
+  `--max-results <N>` [default `20`], `--format <FORMAT>` `toon|json|text` [default `text`],
+  `--file-filter <GLOB>`, `--db-path <PATH>` [default `.codecache/index.db`].
+- `status`: `--db-path <PATH>` [default `.codecache/index.db`].
+- `config`: recognized subcommand whose `--help` exits 0 (flag shape deferred to M7.3 — see
+  ambiguity note).
+- `serve`: `--transport <TYPE>` `stdio|sse` [default `stdio`], `--port <PORT>` [default `3000`],
+  `--db-path <PATH>` [default `.codecache/index.db`].
+- The two arg-level error cases the RED pins (so GREEN must surface them as clap parse errors, not
+  handler errors): an integer flag given a non-numeric value, and an enum flag given an
+  out-of-set value, both → nonzero + stderr. Recommend `--format` and `--transport` as clap
+  `ValueEnum`s and `--max-tokens`/`--max-results` as `usize`.
+
+**RED proof (`cargo test --test cli_tests`) — compiles, 0 passed / 5 failed for the right reason:**
+The M0 stub ignores args and prints `codecache 0.1.0` exiting 0, so every assertion fails because
+clap parsing is not implemented yet — NOT a missing API/compile error (assert_cmd drives a
+subprocess; nothing to import). Representative failures:
+```
+test result: FAILED. 0 passed; 5 failed; 0 ignored
+
+each_command_parses_its_documented_flags
+  Unexpected stdout, failed var.contains(--db-path)
+  command=`...codecache.exe "init" "--help"`  code=0  stdout="codecache 0.1.0\n"
+help_and_version_flags_work
+  Unexpected stdout, failed var.contains(init)    code=0  stdout="codecache 0.1.0\n"
+query_defaults_match_spec
+  Unexpected stdout, failed var.contains(4000)    code=0  stdout="codecache 0.1.0\n"
+bad_args_exit_nonzero_with_message
+  Unexpected success   command=`... "query" "needle" "--max-tokens" "notanumber"`  code=0
+unknown_command_errors_cleanly  (frobnicate accepted, exit 0 — no error surfaced)
+```
+The whole file compiled (dev-deps `assert_cmd`/`predicates` resolve); the failures are purely
+behavioral. This is the correct RED. Hand to **principal-engineering-lead** for GREEN.
+
+**Spec ambiguity hit (flag for eng-lead/manager to resolve at GREEN/M7.3):**
+- `config` — §7.2 gives no detailed flag spec ("Manage configuration" only). Per the manager's
+  instruction the RED is kept minimal: it only asserts `config` is a recognized subcommand whose
+  `--help` exits 0. The read/write flag shape (e.g. `config get/set`) is deliberately NOT pinned
+  here; M7.3 defines the handler and the manager will confirm the `config` flag surface then. The
+  eng-lead should implement `config` as a parseable subcommand now (so `config --help` succeeds)
+  without me having locked in flags that M7.3 might revise.
+- Minor (no action needed for RED): clap renders defaults as `[default: <value>]` in help, so
+  `query_defaults_match_spec` matches the bare values (`4000`, `20`, `text`). If GREEN customizes
+  help rendering such that a literal default value is hidden, ping the test-lead — but standard
+  `#[arg(default_value_t = ...)]` / `default_value = "..."` surfaces them and satisfies the test.
+
 ## GREEN — engineering lead
 
 ### M7.1 — formatters — IMPLEMENTED 2026-06-12 · BLOCKED by a test-file compile bug (E0716)
@@ -280,6 +356,73 @@ the formatter output matches every golden, so they will go green as written once
   E0716, not by formatter code.)
 - `cargo fmt --check` → clean (exit 0).
 
+### M7.2 — CLI parsing + errors + exit codes — GREEN 2026-06-12
+
+**Files changed (production):**
+- `src/cli/mod.rs` — replaced the M0 stub with the full `clap` derive surface mirroring §7.1–§7.2:
+  - `Cli { verbose: bool (global -v/--verbose), command: Command }`, `#[command(name="codecache",
+    version, about)]` (version from `env!("CARGO_PKG_VERSION")` via clap's `version` attr).
+  - `enum Command { Init, Index, Update, Query, Status, Config, Serve }` with the exact §7.2 flags +
+    defaults (every `--db-path` defaults to `.codecache/index.db` via a shared `DEFAULT_DB_PATH`
+    const). `Init.index_path` defaults to `["."]`; `Init.languages` is comma-delimited
+    (`value_delimiter=','`) default `python,typescript,go`. `Query` defaults `--max-tokens 4000`,
+    `--max-results 20`, `--format text`. `Update.files: Vec<PathBuf>` is `required=true`,
+    `value_name="FILE"`. `Query.query` positional `value_name="QUERY"`.
+  - Two clap `ValueEnum`s: `OutputFormat { Toon, Json, Text }` (`--format`, lowercase toon|json|text)
+    and `Transport { Stdio, Sse }` (`--transport`, lowercase stdio|sse) — out-of-set values produce
+    clap's own nonzero parse error (powers `bad_args_exit_nonzero_with_message`'s `--transport bogus`
+    arm). `impl From<OutputFormat> for formatter::Format` provided for M7.3 to map at the handler
+    boundary (keeps clap concerns in `cli`, formatter free of CLI types — D4).
+  - `run() -> anyhow::Result<()>`: `Cli::parse()` (auto-exits nonzero on parse error / prints
+    help+version) then `dispatch(cli)`. Handlers are thin M7.2 placeholders: each prints
+    "<cmd>: not yet implemented (M7.3)." and returns `Ok(())`; `serve` prints a clean "not
+    implemented yet (M8)." No reachable `unwrap()/expect()/panic!`.
+- `src/main.rs` — UNCHANGED; already `fn main() -> anyhow::Result<()> { codecache::cli::run() }`
+  (anyhow maps `Err` → nonzero exit). Verified intact.
+
+**`Config` subcommand shape chosen (so M7.3 builds on it):** minimal, forward-compatible
+positional pair — `Config { key: Option<String> (value_name "KEY"), value: Option<String>
+(value_name "VALUE"), db_path: PathBuf (default .codecache/index.db) }`. Semantics deferred to
+M7.3: read when only `KEY` given, write when both given; `config --help` parses + exits 0 today.
+No `--get/--set/--list` committed — left open for M7.3 to define without rework.
+
+**How each RED test passes:**
+1. `each_command_parses_its_documented_flags` — every subcommand's `--help` exits 0 and clap renders
+   each documented flag name (`--db-path`, `--index-path`, `--ignore`, `--languages`, `--full`,
+   `--progress`, `--max-tokens`, `--max-results`, `--format`, `--file-filter`, `--transport`,
+   `--port`) plus the `FILE`/`QUERY` positional value-names in usage. `config --help` exits 0.
+2. `query_defaults_match_spec` — `default_value_t` renders `[default: 4000]`, `[default: 20]`,
+   `[default: text]` and the `[possible values: toon, json, text]` set in `query --help`.
+3. `help_and_version_flags_work` — clap's derived `--help`/`-h` list all 7 subcommands + the global
+   `--verbose`/`-v`; `--version`/`-V` print `0.1.0` (`CARGO_PKG_VERSION`).
+4. `bad_args_exit_nonzero_with_message` — `--max-tokens notanumber` (usize type error),
+   `--transport bogus` (ValueEnum out-of-set), and bare `query` (missing required `<QUERY>`) each
+   hit clap validation → nonzero exit + non-empty stderr before any handler runs.
+5. `unknown_command_errors_cleanly` — `frobnicate` is an unrecognized subcommand → clap error names
+   it on stderr, nonzero exit, no panic (handlers never run; no reachable unwrap/panic).
+
+**Deviations / notes:**
+- `Init.index_path` / `Init.languages` / `Init.ignore` are `Vec<String>` (raw patterns/paths) and
+  `Update.files` is `Vec<PathBuf>` per the brief — glob expansion is an M7.3 handler concern.
+- ONE gate caveat: `cargo fmt --check` reports a diff, but it is ONLY in `tests/cli_tests.rs:147`
+  (a pre-existing single-vs-multi-line `.stdout(...)` chain style nit in the test-lead's RED file).
+  Under the hard rule I did NOT modify the test. Both production files are fmt-clean
+  (`rustfmt --check src/cli/mod.rs` and `src/main.rs` → exit 0). Flagging for the test-lead/manager
+  to run `cargo fmt` on the test file (no assertion/semantic change) so the workspace `fmt --check`
+  goes fully clean.
+
+**Gate output (Rust 1.85):**
+- `cargo test --test cli_tests` → 5 passed; 0 failed.
+- `cargo test --all` → no regressions: lib 25 (was 24; +1 `output_format_maps_to_formatter_format`
+  unit test — the `cli_definition_is_valid` debug_assert replaced the old `run_succeeds` stub),
+  cli_tests 5, formatter 6, plus config 5, e2e_index 4, hasher 11, indexer 15, parser 14, chunker
+  10, chunker_proptest 3, retriever 12, storage 18, smoke 1 — all ok.
+- `cargo clippy --all-targets -- -D warnings` → clean (exit 0).
+- `cargo fmt --check` → only the test-file nit above; production fmt-clean.
+- `cargo build` → ok.
+
+Not committed. Hand back to manager → code-reviewer.
+
 ## Specialist / Perf notes
 <skeleton-line / signature-extraction edge cases if routed to rust-treesitter-specialist; no gated perf>
 
@@ -324,6 +467,58 @@ via `to_string_lossy().into_owned()` rather than borrowing — this is the corre
 
 Slice M7.1 is APPROVED — ready for manager to mark DONE (after TODO + formatter/CLAUDE.md status
 updates land in the same change per the DoD).
+
+### M7.2 — CLI parsing — VERDICT: APPROVE (2026-06-12, code-reviewer)
+
+Reviewed `src/cli/mod.rs` (full clap derive surface), `src/main.rs` (unchanged), the 5 RED
+tests in `tests/cli_tests.rs`, and `Cargo.toml` dev-deps against §7.1-§7.2 and the brief.
+
+Gates re-run independently on Rust 1.85 (clean):
+- `cargo clippy --all-targets -- -D warnings` -> exit 0.
+- `cargo fmt --check` -> exit 0 (the test-file reflow noted at GREEN landed; workspace is fmt-clean).
+- `cargo test --all` -> all green: lib 25, cli_tests 5, formatter 6, chunker 10, chunker_proptest 3,
+  config 5, e2e_index 4, hasher 11, indexer 15, parser 14, retriever 12, smoke 1, storage 18
+  (129 total). No regression.
+
+Spec fidelity (§7.2) - every command/flag/default verified EXACT:
+- Global `-v/--verbose` (global=true), `-V/--version` (CARGO_PKG_VERSION via `version` attr),
+  `-h/--help`. All seven subcommands present.
+- init: `--db-path` [.codecache/index.db], `--index-path` (multiple) [.], `--ignore` (multiple),
+  `--languages` (comma-delimited) [python,typescript,go]. index: `--full`/`--db-path`/`--progress`.
+  update: positional `<FILE>...` required=true + `--db-path`. query: positional `<QUERY>`,
+  `--max-tokens 4000`, `--max-results 20`, `--format` toon|json|text [text], `--file-filter`,
+  `--db-path`. status: `--db-path`. serve: `--transport` stdio|sse [stdio], `--port 3000`,
+  `--db-path`. All `--db-path` defaults share `DEFAULT_DB_PATH` const - DRY, correct.
+
+Checks (all pass):
+1. config shape `Config { key: Option<String>, value: Option<String>, db_path: PathBuf }` is
+   reasonable and forward-compatible; positional KEY [VALUE] does not box in M7.3. No §7.2 divergence.
+2. No reachable `unwrap()/expect()/panic!` in cli/mod.rs. `Cli::parse()` auto-exit on parse error
+   is clap idiom (nonzero + stderr), not a panic; anyhow maps handler `Err` -> nonzero in main.
+3. ValueEnum correctness: out-of-set `--transport bogus` / `--format bogus` -> clap parse error
+   (nonzero), pinned by `bad_args_exit_nonzero_with_message`. Lowercase tokens match spec.
+4. `From<OutputFormat> for formatter::Format` is the correct seam (clap types stay in cli);
+   exhaustive match, no wildcard. Verified by `output_format_maps_to_formatter_format`.
+5. Idiomatic clap derive: `default_values_t` Vec defaults, `value_delimiter` on languages,
+   `required = true` on update files, no needless mut/clone. `cli_definition_is_valid` debug_assert.
+6. Test integrity: 5 tests pin help/version/defaults/bad-args/unknown-command at the PARSING layer;
+   assertions meaningful; none weakened; the reflow changed no assertion.
+7. Handler placeholders inert, clearly M7.3/M8 TODOs, never panic, return `Ok(())`.
+
+Dependencies: `assert_cmd = "2"` / `predicates = "3"` dev-only (D17-approved, documented). clap
+already a production dep. No undocumented deps.
+
+Findings: none (blocker/major/minor).
+
+Non-actionable notes:
+- config `--help` advertises `--db-path` though §7.2 lists no config flags - intentional,
+  forward-compatible, not scope creep.
+- serve handler returns `Ok(())` (exit 0) with an M8 notice - brief §Scope permits zero-or-nonzero
+  for the stub, so in-spec for M7.2; M7.3/M8 owns final serve exit semantics.
+
+Slice M7.2 is APPROVED. Manager: mark DONE once docs/TODO.md Phase 7 + src/cli/CLAUDE.md status are
+updated in the same change (cli/CLAUDE.md still reads the M0-stub status / "Full clap dispatch lands
+at M7").
 
 ## OUTCOME — manager
 <per-slice: aligned? TODO + module CLAUDE.md updated? committed? follow-ups?>

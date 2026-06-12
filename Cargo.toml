@@ -64,3 +64,8 @@ tempfile = "3.10"
 # Property-based testing. Used from M4 (chunker non-overlap invariant) onward; declared at M0 to
 # keep Cargo.toml churn low. Manager-approved deviation (docs/plans/M0-scaffolding.md, ENGINEERING_PLAN §6).
 proptest = "1.5"
+# CLI integration testing (M7.2/M7.4). Drives the built binary + asserts stdout/stderr/exit codes.
+# Dev-only (ships in no release artifact); manager-approved D17 (docs/ROADMAP.md). Scoped to
+# tests/cli_tests.rs + tests/e2e_cli.rs.
+assert_cmd = "2"
+predicates = "3"

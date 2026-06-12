@@ -184,7 +184,11 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       JSON = §6.4.2 field-keyed (format-local DTO, no serde on `types::Chunk` — D4/D5); text =
       ASCII, **D13 agent-first** (qualified parent + range + one-line signature before body). D7
       honored (line ranges from stored `start_line`/`end_line`, zero file reads).
-- [ ] M7.2 CLI parsing + errors + exit codes (`clap` derive, §7.1–7.2 defaults) → test-lead → engineering-lead
+- [x] **M7.2 CLI parsing + errors + exit codes** → DONE 2026-06-12: `clap` derive `Cli`/`Command`
+      mirroring §7.1–7.2 exactly (all 7 commands, flags + defaults, `ValueEnum` for `--format`/
+      `--transport`); `run()`→`Cli::parse()`→`dispatch()`, Err→nonzero exit, no panic. 5 tests green
+      (`tests/cli_tests.rs`, assert_cmd/predicates dev-deps D17); reviewer APPROVED (0 findings).
+      Handlers are inert M7.3 placeholders.
 - [ ] M7.3 command handlers + status (delegate to app/Indexer/Retriever/Config/Storage; `serve` stub) → test-lead → engineering-lead
 - [ ] M7.4 E2E through the built binary (init→index→query, assert_cmd) → test-lead → engineering-lead
 
