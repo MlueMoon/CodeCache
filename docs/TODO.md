@@ -10,6 +10,12 @@ each phase below.
 
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done · → owner
 
+> **Replan 2026-06-11** (director's assessment — [`../project_overview.md`](../project_overview.md),
+> ROADMAP **D12–D16**): repositioned as *index-as-tool inside the agent loop*; `codecache_outline`
+> + agent-first ordering added (M7/M8, D13); self-healing search added (M8, D14); `rmcp` SDK
+> evaluation at M8 entry (D15); M10's "5-task ≥40% token reduction" replaced by the benchmark
+> suite (D16); new **research track R1–R4** after M8. M0–M5 and the in-flight M6 scope are unchanged.
+
 ---
 
 ## Phase 0 — Scaffolding (M0) · plan: [plans/M0-scaffolding.md](plans/M0-scaffolding.md) · **DONE 2026-06-10** (brief: [.claude/briefs/BRIEF-M0-scaffolding.md](../.claude/briefs/BRIEF-M0-scaffolding.md))
@@ -107,26 +113,81 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · → owner
       tests gate the refactor. Cold-index bench baseline recorded (perf flags per-file transaction
       overhead for M10 profiling — naive extrapolation over the 10K-LOC budget).
 
-## Phase 6 — retriever (M6) · plan: [plans/M6-retriever.md](plans/M6-retriever.md)
-- [ ] RED tests: BM25 ranking determinism; token-budget packing; empty/no-match → test-lead
-- [ ] `retriever` (BM25 + snippet + token budget) → engineering-lead
-- [ ] Query-latency bench wired vs p95<500ms → perf
+## Phase 6 — retriever (M6) · plan: [plans/M6-retriever.md](plans/M6-retriever.md) · **IN PROGRESS 2026-06-10**
+Sliced M6.1–M6.4 per the phase plan (one TDD cycle + one commit each). Builds only on M1 `storage`
+(`search`/`bm25()`/`SearchResult { chunk, bm25_score }`), so tests seed storage directly — no real
+indexing needed. APIs match project_plan §3.2.3 (`Retriever`/`QueryOptions`/`QueryResult`) + §6.
+`Retriever` lands **behind a trait** (D1 — future `HybridRetriever` wraps it). Headline budget:
+query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char heuristic `(len/4).max(1)`.
+- [x] **M6.1 query preprocessing** — RED (7 unit tests in `src/retriever/mod.rs`: tokenize+lowercase,
+      stopword removal, ` OR ` MATCH expr, empty-after-stopwords, FTS5 special-char escaping,
+      determinism, UTF-8) → test-lead; `preprocess_query(&str) -> Vec<String>` + `build_match_expression`
+      (` OR `-join, §6.1) + `escape_fts5_token` (bareword-as-is / else doubled-quote literal) +
+      documented `STOPWORDS` const → engineering-lead. Reviewer **APPROVED** (pure string logic; no
+      FTS5/perf). **D1 trait DEFERRED to M6.2** (preprocessing introduces no `Storage`, so the
+      struct+trait would be undriven now — they land driven by M6.2's `query`/`new` RED). The three
+      preprocessing fns + `STOPWORDS` carry a scoped `#[allow(dead_code)]` (no non-test caller until
+      M6.2's `query` consumes them; attributes come off in M6.2). **All four gates re-verified green
+      on Rust 1.85.0 (2026-06-11):** `cargo fmt --all -- --check`, `cargo clippy --all-targets --
+      -D warnings`, `cargo test --all` (**103 passed**: 22 lib +3 chunker_proptest +10 chunker
+      +5 config +4 e2e +11 hasher +15 indexer +14 parser +1 smoke +18 storage), `cargo build`.
+      **DONE 2026-06-11.**
+      brief: [.claude/briefs/BRIEF-M6.1-query-preprocessing.md](../.claude/briefs/BRIEF-M6.1-query-preprocessing.md)
+- [ ] **M6.2 BM25 search + determinism + dedup** — RED (relevant>irrelevant, deterministic order +
+      stable tie-break, no-match empty, overlapping-span dedup, file_filter) → test-lead; execute
+      `storage.search` + stable order + dedup + `file_filter`; **D1 trait lands here** (deferred from
+      M6.1) — introduce `trait Retrieve` + `Retriever` struct driven by `new`/`query` RED; `query`
+      short-circuits an empty `preprocess_query` to an empty `QueryResult` (never `MATCH ""`)
+      → engineering-lead + **rust-treesitter-specialist** (FTS5/BM25 query-plan/weights) → reviewer.
+      brief: [.claude/briefs/BRIEF-M6.2-bm25-search-dedup.md](../.claude/briefs/BRIEF-M6.2-bm25-search-dedup.md)
+- [ ] **M6.3 token budget packing** — RED (never exceeds max_tokens, greedy stops keeping top-ranked,
+      total_tokens = sum packed, total_results_found = pre-budget, estimate_tokens = len/4 min 1) →
+      test-lead; `apply_token_budget` + `estimate_tokens` + `QueryResult` assembly → engineering-lead → reviewer.
+      brief: [.claude/briefs/BRIEF-M6.3-token-budget-packing.md](../.claude/briefs/BRIEF-M6.3-token-budget-packing.md)
+- [ ] **M6.4 query-latency bench** — `benches/query_bench.rs` over synthetic 100K-LOC index; p50/p95/p99;
+      track p95 < 500ms (full budget gate at M10) → **performance-bench-engineer** → reviewer.
+      brief: [.claude/briefs/BRIEF-M6.4-latency-bench.md](../.claude/briefs/BRIEF-M6.4-latency-bench.md)
+- Replan note (D14): **self-healing search lands at M8, not M6** — M6 scope frozen mid-flight.
+  M6's only obligation: `QueryResult` chunks keep `file_path` (already true) so M8 can hash-check
+  result files without new retriever API.
 
 ## Phase 7 — formatter + cli (M7) · plan: [plans/M7-formatter-cli.md](plans/M7-formatter-cli.md)
 - [ ] RED tests: golden TOON/JSON/text; CLI parsing/errors; e2e init→index→query → test-lead
 - [ ] `formatter` + `cli` (clap commands) → engineering-lead
+- [ ] **D13 agent-first output ordering**: signature/skeleton lines before bodies in TOON/text
+      golden outputs (spec §8.2 ordering note) → test-lead + engineering-lead
 
 ## Phase 8 — mcp_server (M8) · plan: [plans/M8-mcp-server.md](plans/M8-mcp-server.md)
+- [ ] **Entry (D15)**: spike official MCP Rust SDK `rmcp` vs hand-rolled JSON-RPC; manager
+      signs off the dep + pins a version (record outcome in ROADMAP) → engineering-lead + manager
 - [ ] RED tests: JSON-RPC handshake + tool round-trip vs mock → test-lead
 - [ ] `mcp_server` (stdio) + `serve` → engineering-lead
+- [ ] **D13 `codecache_outline` tool** (symbol skeleton from the index; spec §8.2 Tool 3) →
+      test-lead → engineering-lead
+- [ ] **D14 self-healing search**: `codecache_search` hash-checks result files + transparently
+      re-indexes changed ones; RED test = stale-file query returns fresh content → test-lead →
+      engineering-lead
 
 ## Phase 9 — TypeScript + Go (M9) · plan: [plans/M9-typescript-go.md](plans/M9-typescript-go.md)
 - [ ] RED tests: per-language fixtures → test-lead
 - [ ] TS + Go parser configs/queries → engineering-lead + specialist
 
 ## Phase 10 — Benchmarks + Release (M10) · plan: [plans/M10-benchmarks-release.md](plans/M10-benchmarks-release.md)
-- [ ] Full criterion suite vs all budgets; token-reduction benchmark (5 tasks) → perf
+- [ ] Full criterion suite vs systems budgets (p95<500ms, index<100MB, incr<2s, cold-index, hash) → perf
+- [ ] **D16 Layer-1 retrieval-quality scoring** (replaces the 5-task token-reduction benchmark):
+      ContextBench-Lite gold-context Recall/Precision/F1 + hand-verified micro-suite
+      (`project_overview.md` §5.1–5.2) → perf
 - [ ] `release.yml`; version bump; `v0.1.0` tag + crates.io publish; install smoke test → devops-release
+
+## Research track (R1–R4, post-M8; M9 can interleave) · spec: [`../project_overview.md`](../project_overview.md) §5–§6 · ROADMAP "Research track"
+- [ ] **R1 harness**: agent loop with pluggable retrieval tools; trajectory logging; ContextBench
+      gold-context scorer; exit = one task end-to-end in arms A0/A1/A4 → manager to brief (new ownership)
+- [ ] **R2 offline ablations**: Layer-1 sweeps (chunking × ranking × enrichment) on
+      ContextBench-Lite + RepoEval slice; reproduce published BM25 baselines → perf + specialist
+- [ ] **R3 agent-in-loop study**: full A0–A5 matrix on 30–50 tasks → promote winners to 100;
+      budget/scale sweeps; RQ1–RQ3 plots with CIs; ~$1K API line item → manager + perf
+- [ ] **R4 write-up & release**: preprint + artifact (binary, harness, trajectories); blog;
+      one workshop submission (LLM4Code/AIware/MSR) → manager
 
 ---
 
