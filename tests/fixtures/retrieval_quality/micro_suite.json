@@ -1,0 +1,390 @@
+{
+  "description": "CodeCache M10.2 micro-suite: hand-verified gold-context fixture for offline Layer-1 retrieval-quality scoring. This is a PROXY for the real ContextBench corpus (arXiv:2602.05892) — it uses the same scoring protocol (Recall@k, Precision@k, F1 at file and block(function) granularity) but with small synthetic-but-realistic corpora and hand-labeled gold answers. R2 swaps in the real ContextBench corpus using the identical scorer. Queries and gold labels are hand-verified: the gold (file, symbol) blocks are the functions/classes that a correct implementation would need to read to answer the query.",
+  "scoring_protocol": {
+    "metrics": ["Recall@k", "Precision@k", "F1@k"],
+    "k_values": [1, 5, 10],
+    "granularities": ["file", "block"],
+    "block_key": "(file_path, symbol_name)",
+    "note": "File-level: did retrieved set include the gold file(s)? Block-level: did it include the gold (file, symbol_name) pair? A retrieved result is a hit if its file_path (file-level) or (file_path, symbol_name) (block-level) is in the gold set."
+  },
+  "corpora": [
+    {
+      "id": "auth_module",
+      "description": "Authentication and authorization module (Python-style). Tests keyword-rich queries where BM25 should perform well.",
+      "chunks": [
+        {
+          "file_path": "src/auth/authenticate.py",
+          "symbol_name": "authenticate_user",
+          "symbol_type": "function",
+          "language": "python",
+          "chunk_text": "def authenticate_user(username, password):\n    \"\"\"Authenticate a user with username and password credentials.\"\"\"\n    user = db.find_user(username)\n    if user is None:\n        return AuthResult.user_not_found()\n    if not verify_password(password, user.password_hash):\n        return AuthResult.invalid_credentials()\n    token = generate_session_token(user.id)\n    return AuthResult.success(token)\n",
+          "imports": ["from db import find_user", "from crypto import verify_password, generate_session_token"],
+          "cross_references": ["db.find_user", "verify_password", "generate_session_token"]
+        },
+        {
+          "file_path": "src/auth/authenticate.py",
+          "symbol_name": "verify_password",
+          "symbol_type": "function",
+          "language": "python",
+          "chunk_text": "def verify_password(plaintext, hashed):\n    \"\"\"Verify a plaintext password against a stored bcrypt hash.\"\"\"\n    import bcrypt\n    return bcrypt.checkpw(plaintext.encode(), hashed.encode())\n",
+          "imports": ["import bcrypt"],
+          "cross_references": ["bcrypt.checkpw"]
+        },
+        {
+          "file_path": "src/auth/session.py",
+          "symbol_name": "generate_session_token",
+          "symbol_type": "function",
+          "language": "python",
+          "chunk_text": "def generate_session_token(user_id):\n    \"\"\"Generate a cryptographically secure session token for the given user.\"\"\"\n    import secrets\n    token = secrets.token_hex(32)\n    session_store[token] = {'user_id': user_id, 'created_at': time.time()}\n    return token\n",
+          "imports": ["import secrets", "import time"],
+          "cross_references": ["secrets.token_hex", "session_store"]
+        },
+        {
+          "file_path": "src/auth/session.py",
+          "symbol_name": "invalidate_session",
+          "symbol_type": "function",
+          "language": "python",
+          "chunk_text": "def invalidate_session(token):\n    \"\"\"Invalidate (logout) a session by removing the token from the store.\"\"\"\n    return session_store.pop(token, None) is not None\n",
+          "imports": [],
+          "cross_references": ["session_store"]
+        },
+        {
+          "file_path": "src/auth/permissions.py",
+          "symbol_name": "check_permission",
+          "symbol_type": "function",
+          "language": "python",
+          "chunk_text": "def check_permission(user_id, resource, action):\n    \"\"\"Check whether a user has permission to perform action on resource.\"\"\"\n    roles = get_user_roles(user_id)\n    for role in roles:\n        if role.allows(resource, action):\n            return True\n    return False\n",
+          "imports": ["from roles import get_user_roles"],
+          "cross_references": ["get_user_roles", "role.allows"]
+        },
+        {
+          "file_path": "src/auth/permissions.py",
+          "symbol_name": "get_user_roles",
+          "symbol_type": "function",
+          "language": "python",
+          "chunk_text": "def get_user_roles(user_id):\n    \"\"\"Fetch all roles assigned to a user from the database.\"\"\"\n    return db.query('SELECT role FROM user_roles WHERE user_id = ?', (user_id,))\n",
+          "imports": ["from db import query"],
+          "cross_references": ["db.query"]
+        },
+        {
+          "file_path": "src/auth/middleware.py",
+          "symbol_name": "require_auth",
+          "symbol_type": "function",
+          "language": "python",
+          "chunk_text": "def require_auth(handler):\n    \"\"\"Decorator that enforces authentication before calling the handler.\"\"\"\n    def wrapper(request, *args, **kwargs):\n        token = request.headers.get('Authorization')\n        if token is None or not validate_token(token):\n            return Response(status=401, body='Unauthorized')\n        return handler(request, *args, **kwargs)\n    return wrapper\n",
+          "imports": ["from auth.session import validate_token"],
+          "cross_references": ["validate_token", "Response"]
+        },
+        {
+          "file_path": "src/auth/middleware.py",
+          "symbol_name": "validate_token",
+          "symbol_type": "function",
+          "language": "python",
+          "chunk_text": "def validate_token(token):\n    \"\"\"Return True if the token exists in the session store and has not expired.\"\"\"\n    session = session_store.get(token)\n    if session is None:\n        return False\n    return time.time() - session['created_at'] < SESSION_TTL\n",
+          "imports": ["import time"],
+          "cross_references": ["session_store", "SESSION_TTL"]
+        },
+        {
+          "file_path": "src/utils/crypto.py",
+          "symbol_name": "hash_password",
+          "symbol_type": "function",
+          "language": "python",
+          "chunk_text": "def hash_password(plaintext):\n    \"\"\"Hash a plaintext password using bcrypt with a random salt.\"\"\"\n    import bcrypt\n    salt = bcrypt.gensalt()\n    return bcrypt.hashpw(plaintext.encode(), salt).decode()\n",
+          "imports": ["import bcrypt"],
+          "cross_references": ["bcrypt.gensalt", "bcrypt.hashpw"]
+        }
+      ],
+      "queries": [
+        {
+          "id": "auth_q1",
+          "query": "authenticate user credentials",
+          "query_type": "keyword",
+          "note": "Direct keyword match; BM25 expected to find authenticate_user easily.",
+          "gold_files": ["src/auth/authenticate.py"],
+          "gold_blocks": [
+            {"file_path": "src/auth/authenticate.py", "symbol_name": "authenticate_user"}
+          ]
+        },
+        {
+          "id": "auth_q2",
+          "query": "generate session token user",
+          "query_type": "keyword",
+          "note": "Session token generation; both generate_session_token and authenticate_user are gold (latter calls former).",
+          "gold_files": ["src/auth/session.py", "src/auth/authenticate.py"],
+          "gold_blocks": [
+            {"file_path": "src/auth/session.py", "symbol_name": "generate_session_token"},
+            {"file_path": "src/auth/authenticate.py", "symbol_name": "authenticate_user"}
+          ]
+        },
+        {
+          "id": "auth_q3",
+          "query": "check user permission role resource",
+          "query_type": "keyword",
+          "note": "Permission check; gold is check_permission and get_user_roles.",
+          "gold_files": ["src/auth/permissions.py"],
+          "gold_blocks": [
+            {"file_path": "src/auth/permissions.py", "symbol_name": "check_permission"},
+            {"file_path": "src/auth/permissions.py", "symbol_name": "get_user_roles"}
+          ]
+        },
+        {
+          "id": "auth_q4",
+          "query": "validate token expire session",
+          "query_type": "keyword",
+          "note": "Token validation and expiry; gold is validate_token.",
+          "gold_files": ["src/auth/middleware.py"],
+          "gold_blocks": [
+            {"file_path": "src/auth/middleware.py", "symbol_name": "validate_token"}
+          ]
+        },
+        {
+          "id": "auth_q5",
+          "query": "error handling",
+          "query_type": "semantic",
+          "note": "SEMANTIC query — BM25 may miss this since none of the functions use the exact phrase 'error handling'. Expected BM25 recall gap (informational, D1).",
+          "gold_files": ["src/auth/authenticate.py"],
+          "gold_blocks": [
+            {"file_path": "src/auth/authenticate.py", "symbol_name": "authenticate_user"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "config_module",
+      "description": "Configuration loading and validation module (TypeScript-style). Tests queries on config/settings domain.",
+      "chunks": [
+        {
+          "file_path": "src/config/loader.ts",
+          "symbol_name": "loadConfig",
+          "symbol_type": "function",
+          "language": "typescript",
+          "chunk_text": "function loadConfig(configPath: string): Config {\n  /** Load configuration from disk and validate it. */\n  const raw = fs.readFileSync(configPath, 'utf8');\n  const parsed = JSON.parse(raw);\n  return validateConfig(parsed);\n}\n",
+          "imports": ["import fs from 'fs'", "import { validateConfig } from './validator'"],
+          "cross_references": ["fs.readFileSync", "JSON.parse", "validateConfig"]
+        },
+        {
+          "file_path": "src/config/validator.ts",
+          "symbol_name": "validateConfig",
+          "symbol_type": "function",
+          "language": "typescript",
+          "chunk_text": "function validateConfig(config: unknown): Config {\n  /** Validate a raw parsed config object and throw if required fields are missing. */\n  if (!config || typeof config !== 'object') {\n    throw new ConfigError('Config must be a JSON object');\n  }\n  const c = config as Record<string, unknown>;\n  if (!c.database) throw new ConfigError('Missing required field: database');\n  if (!c.port) throw new ConfigError('Missing required field: port');\n  return c as Config;\n}\n",
+          "imports": ["import { ConfigError } from './errors'"],
+          "cross_references": ["ConfigError"]
+        },
+        {
+          "file_path": "src/config/validator.ts",
+          "symbol_name": "ConfigError",
+          "symbol_type": "class",
+          "language": "typescript",
+          "chunk_text": "class ConfigError extends Error {\n  /** Custom error type for configuration validation failures. */\n  constructor(message: string) {\n    super(message);\n    this.name = 'ConfigError';\n  }\n}\n",
+          "imports": [],
+          "cross_references": ["Error"]
+        },
+        {
+          "file_path": "src/config/defaults.ts",
+          "symbol_name": "mergeWithDefaults",
+          "symbol_type": "function",
+          "language": "typescript",
+          "chunk_text": "function mergeWithDefaults(config: Partial<Config>): Config {\n  /** Merge a partial config with the default values, user values taking priority. */\n  return { ...DEFAULT_CONFIG, ...config };\n}\n",
+          "imports": ["import { DEFAULT_CONFIG } from './constants'"],
+          "cross_references": ["DEFAULT_CONFIG"]
+        },
+        {
+          "file_path": "src/config/defaults.ts",
+          "symbol_name": "getDefaultConfig",
+          "symbol_type": "function",
+          "language": "typescript",
+          "chunk_text": "function getDefaultConfig(): Config {\n  /** Return the built-in default configuration values. */\n  return { ...DEFAULT_CONFIG };\n}\n",
+          "imports": ["import { DEFAULT_CONFIG } from './constants'"],
+          "cross_references": ["DEFAULT_CONFIG"]
+        },
+        {
+          "file_path": "src/config/env.ts",
+          "symbol_name": "loadEnvOverrides",
+          "symbol_type": "function",
+          "language": "typescript",
+          "chunk_text": "function loadEnvOverrides(config: Config): Config {\n  /** Apply environment variable overrides to the config. DATABASE_URL and PORT are checked. */\n  const overridden = { ...config };\n  if (process.env.DATABASE_URL) overridden.database = process.env.DATABASE_URL;\n  if (process.env.PORT) overridden.port = parseInt(process.env.PORT, 10);\n  return overridden;\n}\n",
+          "imports": [],
+          "cross_references": ["process.env"]
+        }
+      ],
+      "queries": [
+        {
+          "id": "config_q1",
+          "query": "load config file disk",
+          "query_type": "keyword",
+          "note": "Config loading from disk; gold is loadConfig.",
+          "gold_files": ["src/config/loader.ts"],
+          "gold_blocks": [
+            {"file_path": "src/config/loader.ts", "symbol_name": "loadConfig"}
+          ]
+        },
+        {
+          "id": "config_q2",
+          "query": "validate config required fields missing",
+          "query_type": "keyword",
+          "note": "Config validation; gold is validateConfig (throws on missing fields).",
+          "gold_files": ["src/config/validator.ts"],
+          "gold_blocks": [
+            {"file_path": "src/config/validator.ts", "symbol_name": "validateConfig"}
+          ]
+        },
+        {
+          "id": "config_q3",
+          "query": "default configuration values merge",
+          "query_type": "keyword",
+          "note": "Default config and merge; gold is mergeWithDefaults and getDefaultConfig.",
+          "gold_files": ["src/config/defaults.ts"],
+          "gold_blocks": [
+            {"file_path": "src/config/defaults.ts", "symbol_name": "mergeWithDefaults"},
+            {"file_path": "src/config/defaults.ts", "symbol_name": "getDefaultConfig"}
+          ]
+        },
+        {
+          "id": "config_q4",
+          "query": "environment variable override port database",
+          "query_type": "keyword",
+          "note": "Env var overrides; gold is loadEnvOverrides.",
+          "gold_files": ["src/config/env.ts"],
+          "gold_blocks": [
+            {"file_path": "src/config/env.ts", "symbol_name": "loadEnvOverrides"}
+          ]
+        },
+        {
+          "id": "config_q5",
+          "query": "settings not found",
+          "query_type": "semantic",
+          "note": "SEMANTIC query about missing settings — BM25 may miss since exact phrase does not appear. Expected BM25 recall gap (informational, D1).",
+          "gold_files": ["src/config/validator.ts"],
+          "gold_blocks": [
+            {"file_path": "src/config/validator.ts", "symbol_name": "validateConfig"},
+            {"file_path": "src/config/validator.ts", "symbol_name": "ConfigError"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "data_processing",
+      "description": "Data transformation and pipeline module (Go-style). Tests queries on stream processing, filtering, aggregation.",
+      "chunks": [
+        {
+          "file_path": "src/pipeline/filter.go",
+          "symbol_name": "FilterRecords",
+          "symbol_type": "function",
+          "language": "go",
+          "chunk_text": "func FilterRecords(records []Record, predicate func(Record) bool) []Record {\n\t// FilterRecords applies predicate to each record and returns matching records.\n\tresult := make([]Record, 0, len(records))\n\tfor _, r := range records {\n\t\tif predicate(r) {\n\t\t\tresult = append(result, r)\n\t\t}\n\t}\n\treturn result\n}\n",
+          "imports": [],
+          "cross_references": ["Record"]
+        },
+        {
+          "file_path": "src/pipeline/transform.go",
+          "symbol_name": "TransformRecords",
+          "symbol_type": "function",
+          "language": "go",
+          "chunk_text": "func TransformRecords(records []Record, fn func(Record) Record) []Record {\n\t// TransformRecords applies fn to each record, returning the transformed slice.\n\tresult := make([]Record, len(records))\n\tfor i, r := range records {\n\t\tresult[i] = fn(r)\n\t}\n\treturn result\n}\n",
+          "imports": [],
+          "cross_references": ["Record"]
+        },
+        {
+          "file_path": "src/pipeline/aggregate.go",
+          "symbol_name": "AggregateSum",
+          "symbol_type": "function",
+          "language": "go",
+          "chunk_text": "func AggregateSum(records []Record, field string) float64 {\n\t// AggregateSum sums the numeric field across all records.\n\tvar total float64\n\tfor _, r := range records {\n\t\ttotal += r.GetFloat(field)\n\t}\n\treturn total\n}\n",
+          "imports": [],
+          "cross_references": ["Record.GetFloat"]
+        },
+        {
+          "file_path": "src/pipeline/aggregate.go",
+          "symbol_name": "AggregateCount",
+          "symbol_type": "function",
+          "language": "go",
+          "chunk_text": "func AggregateCount(records []Record) int {\n\t// AggregateCount returns the number of records in the slice.\n\treturn len(records)\n}\n",
+          "imports": [],
+          "cross_references": ["Record"]
+        },
+        {
+          "file_path": "src/pipeline/pipeline.go",
+          "symbol_name": "RunPipeline",
+          "symbol_type": "function",
+          "language": "go",
+          "chunk_text": "func RunPipeline(input []Record, stages []Stage) []Record {\n\t// RunPipeline applies each pipeline stage sequentially to the input records.\n\tresult := input\n\tfor _, stage := range stages {\n\t\tresult = stage.Process(result)\n\t}\n\treturn result\n}\n",
+          "imports": [],
+          "cross_references": ["Record", "Stage", "Stage.Process"]
+        },
+        {
+          "file_path": "src/pipeline/pipeline.go",
+          "symbol_name": "Stage",
+          "symbol_type": "struct",
+          "language": "go",
+          "chunk_text": "type Stage struct {\n\t// Stage represents one step in the data processing pipeline.\n\tName    string\n\tProcess func([]Record) []Record\n}\n",
+          "imports": [],
+          "cross_references": ["Record"]
+        },
+        {
+          "file_path": "src/pipeline/sort.go",
+          "symbol_name": "SortRecords",
+          "symbol_type": "function",
+          "language": "go",
+          "chunk_text": "func SortRecords(records []Record, field string, ascending bool) []Record {\n\t// SortRecords sorts records by the specified field in ascending or descending order.\n\tsorted := make([]Record, len(records))\n\tcopy(sorted, records)\n\tsort.Slice(sorted, func(i, j int) bool {\n\t\tif ascending {\n\t\t\treturn sorted[i].GetString(field) < sorted[j].GetString(field)\n\t\t}\n\t\treturn sorted[i].GetString(field) > sorted[j].GetString(field)\n\t})\n\treturn sorted\n}\n",
+          "imports": ["\"sort\""],
+          "cross_references": ["Record.GetString", "sort.Slice"]
+        }
+      ],
+      "queries": [
+        {
+          "id": "data_q1",
+          "query": "filter records predicate",
+          "query_type": "keyword",
+          "note": "Filter operation; gold is FilterRecords.",
+          "gold_files": ["src/pipeline/filter.go"],
+          "gold_blocks": [
+            {"file_path": "src/pipeline/filter.go", "symbol_name": "FilterRecords"}
+          ]
+        },
+        {
+          "id": "data_q2",
+          "query": "aggregate sum count records field",
+          "query_type": "keyword",
+          "note": "Aggregation; gold is AggregateSum and AggregateCount.",
+          "gold_files": ["src/pipeline/aggregate.go"],
+          "gold_blocks": [
+            {"file_path": "src/pipeline/aggregate.go", "symbol_name": "AggregateSum"},
+            {"file_path": "src/pipeline/aggregate.go", "symbol_name": "AggregateCount"}
+          ]
+        },
+        {
+          "id": "data_q3",
+          "query": "run pipeline stages sequential",
+          "query_type": "keyword",
+          "note": "Pipeline execution; gold is RunPipeline and Stage.",
+          "gold_files": ["src/pipeline/pipeline.go"],
+          "gold_blocks": [
+            {"file_path": "src/pipeline/pipeline.go", "symbol_name": "RunPipeline"},
+            {"file_path": "src/pipeline/pipeline.go", "symbol_name": "Stage"}
+          ]
+        },
+        {
+          "id": "data_q4",
+          "query": "sort records ascending descending field",
+          "query_type": "keyword",
+          "note": "Sort operation; gold is SortRecords.",
+          "gold_files": ["src/pipeline/sort.go"],
+          "gold_blocks": [
+            {"file_path": "src/pipeline/sort.go", "symbol_name": "SortRecords"}
+          ]
+        },
+        {
+          "id": "data_q5",
+          "query": "transform apply each",
+          "query_type": "keyword",
+          "note": "Map/transform operation; gold is TransformRecords.",
+          "gold_files": ["src/pipeline/transform.go"],
+          "gold_blocks": [
+            {"file_path": "src/pipeline/transform.go", "symbol_name": "TransformRecords"}
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -269,9 +269,18 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
             (D7/D11). Verbatim plan + read in `benches/CLAUDE.md`. → perf + specialist
       - [ ] **v0.1.x follow-up (D20):** batch indexer inserts across files into one transaction
             (preserve D2 per-file isolation), re-measure 10K cold index < 5 s → engineering-lead (test-first)
-- [ ] **M10.2 D16 Layer-1 retrieval-quality scoring** (replaces the 5-task token-reduction benchmark):
-      ContextBench-Lite gold-context Recall/Precision/F1 + hand-verified micro-suite
-      (`project_overview.md` §5.1–5.2) → perf
+- [x] **M10.2 D16 Layer-1 retrieval-quality scoring** (replaces the 5-task token-reduction benchmark)
+      → perf. **DONE 2026-06-12.** Deterministic offline scorer `tests/retrieval_quality.rs`
+      (Recall@k/Precision@k/F1@k at file + block(function) granularity; metric math unit-tested
+      test-first, 14 unit tests) over committed gold-context fixture
+      `tests/fixtures/retrieval_quality/micro_suite.json` (loaded via serde_json — single source of
+      truth). **Offline proxy** (real ContextBench corpus not vendorable offline; same protocol, R2
+      swaps in the real corpus) of **15 queries** (3 corpora × 5) vs the aspirational "5×~15" —
+      accepted, **Decision Log D21**. Measured @k=10 macro: keyword (N=13) file Recall=1.000/F1≈0.51,
+      block Recall=1.000/F1≈0.49; semantic (N=2) file Recall@10=0.000 (BM25 gap, D1 informational, no
+      gate). Reviewer APPROVE (after JSON-as-single-source fix). 196 tests green.
+      - [ ] **R2 follow-up (D21):** expand to real ContextBench-Lite + full 5×~15 micro-suite using
+            this scorer; add NDCG@10 → research track R2
 - [ ] **M10.3 CI bench wiring + parity**: `bench.yml` (scheduled + workflow_dispatch, NOT per-PR;
       cache C compile); confirm `ci.yml` still mirrors local hooks → devops-release
 - [ ] **M10.4 release v0.1.0 — STAGED, human-gated**: author `release.yml`; confirm `Cargo.toml`

@@ -64,6 +64,20 @@ deterministic tie-break. No concerns — textbook FTS5 MATCH + bm25-rank plan. R
 independently via the `sqlite3` 3.41.2 shell against the same file. If `SEARCH` ever changes,
 re-capture this and update `examples/explain_query_plan.rs`'s verbatim copy in the same change.
 
+### M10.2 — Layer-1 retrieval-quality scoring (D16; not a criterion bench — lives in `tests/`)
+The retrieval-quality scorer is `tests/retrieval_quality.rs` (deterministic, offline, no LLM spend),
+scoring `Retriever` output against the committed gold-context fixture
+`tests/fixtures/retrieval_quality/micro_suite.json` (single source of truth, loaded via serde_json).
+Metrics: Recall@k / Precision@k / F1@k at **file** and **block(function)** granularity (metric math
+unit-tested test-first — 14 unit tests; the integration test seeds Storage via the public API).
+**Offline micro-suite proxy** of 15 queries (3 corpora × 5) — the real ContextBench corpus is not
+vendorable offline; same protocol, R2 swaps in the real corpus (**Decision Log D21**). No hard gate
+at M10 (D16: "recorded vs gold"). **Measured @k=10 macro (2026-06-12):** keyword (N=13) file
+Recall=1.000 / F1≈0.51, block Recall=1.000 / F1≈0.49; semantic (N=2, e.g. "error handling") file
+Recall@10=0.000 — expected BM25-only semantic gap (D1 informational, the v0.2 hybrid rationale; not a
+gate). The scoring method is documented verbatim in the `tests/retrieval_quality.rs` module doc for
+R2/R3 reuse. Run: `cargo test --test retrieval_quality -- --nocapture` (prints the per-corpus tables).
+
 **M5.2: `indexing.rs` wired (cold-index skeleton — informational, not CI-gated).**
 - Bench: `cold_index/index_all_50_py_files` — 50 synthetic Python files (~500 LOC), cold SQLite DB
   per iteration.

@@ -373,6 +373,28 @@ cross-file transaction batching in the indexer to bring 10K cold-index under 5 s
 is documented honestly in the release notes (CHANGELOG, M10.4). Owner: manager (this decision) +
 performance-bench-engineer (measurement) + engineering-lead (the future optimization slice).
 
+### D21 — M10.2 Layer-1 scoring ships a 15-query offline micro-suite proxy (not the full ContextBench / not 5×15)  · **Adopted at M10.2** (plan: M10.2; research: R2) — *overview §5.1–5.2; Decision Log D16*
+D16 reframed v0.1 evaluation to Layer-1 retrieval-quality scoring vs gold contexts, with **no hard
+gate at M10** ("recorded vs gold"; the Layer-2 dominance headline is R3). M10.2 delivers a
+deterministic, offline scorer (`tests/retrieval_quality.rs`) computing Recall@k / Precision@k /
+F1@k at **file** and **block(function)** granularity over the public `Retriever` surface, plus a
+committed gold-context fixture (`tests/fixtures/retrieval_quality/micro_suite.json`, the single
+source of truth, loaded via `serde_json`). **Two scope realities, stated plainly:** (1) the real
+ContextBench corpus (arXiv:2602.05892) requires network/LLM access and is **not vendorable offline**
+here — the committed fixture is a hand-verified **micro-suite proxy** using the *identical* scoring
+protocol, so R2 swaps in the real corpus with the scorer unchanged; (2) the fixture is **3 corpora ×
+5 queries = 15 queries**, ~5× under the plan's aspirational "5 repos × ~15 queries" (≈75). **Decision:
+accept the 15-query proxy as the v0.1 deliverable.** Rationale: the v0.1 value is the *reusable,
+unit-tested scorer + protocol*, not the sample size; there is no hard gate; expanding to the full
+corpus is exactly R2's job. **Measured (offline, deterministic, 2026-06-12; @k=10 macro):** keyword
+queries (N=13) file Recall = 1.000 / F1 ≈ 0.510, block Recall = 1.000 / F1 ≈ 0.494; semantic queries
+(N=2, e.g. "error handling") file Recall@10 = 0.000 — the expected **BM25-only semantic recall gap**
+(**D1** informational, the v0.2 hybrid rationale; quantified properly at R2/RQ2), NOT a gate.
+Qualitatively in-range vs published BM25 baselines (CodeRAG-Bench). **Follow-up (R2):** expand to the
+real ContextBench-Lite corpus + the full 5×~15 micro-suite using this scorer; add NDCG@10. Owner:
+manager (this decision) + performance-bench-engineer (scorer) — recorded in
+`.claude/briefs/BRIEF-M10-benchmarks-release.md`.
+
 ---
 
 ## Deferred to v0.2+ (from project_plan §9.2)

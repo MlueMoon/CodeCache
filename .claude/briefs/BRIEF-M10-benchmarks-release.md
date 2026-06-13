@@ -285,3 +285,290 @@ in an example binary, acceptable per the no-reachable-panic rule for shipped run
 - **minor — `Cargo.toml:7` — placeholder repository URL** — `repository = "https://github.com/your-org/codecache"` is still the placeholder (flagged in the brief release-boundary note). Not in M10.1's scope to fix, but must be resolved before the M10.4 publish dry-run. Carry to M10.4.
 
 **Verdict:** BLOCK — solely on the DoD doc-update (major). The code, benches, example, gates, assertion policy, honesty, and EXPLAIN capture are all correct and APPROVE-ready. Update `benches/CLAUDE.md` + `docs/TODO.md` in this change and the slice is clear to re-review (expected fast APPROVE).
+
+### M10.1 — DONE ✅ (manager, 2026-06-12)
+- **Block resolved (the only finding):** manager updated `benches/CLAUDE.md` (M10.1 budget table +
+  verbatim FTS5 EXPLAIN plan + D20 cross-link) and `docs/TODO.md` Phase 10 (M10.1 + EXPLAIN sub-item
+  checked, v0.1.x batching follow-up added) in the slice commit. Minor #1 (500-LOC comment) fixed in
+  `benches/indexing.rs`. Minor #2 (placeholder `repository` URL) carried to **M10.4** as planned.
+- **Decisions logged:** **D20** (cold-index 10K-LOC miss = 6.04 s vs < 5 s; tracked, deferred to a
+  v0.1.x test-first transaction-batching slice; NOT a release blocker — 100K < 30 s passes with >2×
+  margin; assertion policy honored). EXPLAIN example `examples/explain_query_plan.rs` **kept** as a
+  reproducible plan-capture tool (reworded from throwaway; gate-clean; R2/R3 reuse it).
+- **Budgets (Win11/Rust 1.85/release):** query p95 0.51 ms ✅ · index 12.3 MB ✅ · incremental 190 ms ✅
+  · cold-100K 13.54 s ✅ · hash-1K 459 ms ✅ · **cold-10K 6.04 s ❌ (D20, tracked)**.
+- **Gates:** fmt / clippy -D warnings / test --all (**181**) / build --benches --examples all clean.
+- **Commit:** `92fe491` — "M10.1: criterion suite vs systems budgets + FTS5 EXPLAIN QUERY PLAN
+  baseline". Working tree clean; nothing pushed/tagged. **Slice DONE.**
+
+> Status line: **M10.1 — RED n/a (benches, not test-first runtime) · GREEN ✅ · REVIEW ✅ (APPROVE after doc fix) · DONE ✅**
+
+## GREEN — perf (M10.2)
+
+**Date:** 2026-06-12 (initial) / 2026-06-12 (BLOCK resolution — all four reviewer findings resolved)
+**Machine:** Windows 11 Home 10.0.26200, Rust 1.85, debug profile (test runner)
+**Run command:** `cargo test --test retrieval_quality retrieval_quality_micro_suite -- --nocapture`
+
+### BLOCK resolution summary (code-reviewer findings, 2026-06-12)
+
+All four findings from the BLOCK verdict have been resolved in `tests/retrieval_quality.rs`:
+
+1. **MAJOR — JSON is now the SINGLE SOURCE OF TRUTH (loaded via `serde_json`).**
+   The hardcoded inline `build_auth_corpus()`, `build_config_corpus()`, `build_data_corpus()`
+   functions are deleted. `tests/retrieval_quality.rs` now loads the fixture via
+   `include_str!("fixtures/retrieval_quality/micro_suite.json")` (embedded at compile time)
+   deserialized with `serde_json::from_str` into typed `FixtureFile`/`FixtureCorpus`/
+   `FixtureChunk`/`FixtureQuery` structs (derived `Deserialize`; `serde` + `serde_json`
+   already a `[dependencies]` entry in `Cargo.toml` — no new dep). Chunks are built from the
+   deserialized data by `build_chunk_from_fixture()`. The "How to add a query" instruction
+   in the module doc (edit the JSON, re-run cargo test) is now literally correct.
+   **De-drift resolved:** the one drifted value — `auth_q1` import string: JSON had
+   `"from crypto import verify_password, generate_session_token"` (comma-separated, valid Python)
+   vs. Rust inline `"from crypto import verify_password generate_session_token"` (space, malformed).
+   The JSON (comma) value is now the authoritative value. This string is in the `imports` column,
+   which IS indexed by FTS5 (bm25 weight 2.0 — corrected; only `file_path`/`start_byte`/`end_byte`/
+   `start_line`/`end_line`/`language` are UNINDEXED). **No measured metric number changed after
+   de-drifting** for two independent reasons: (1) the `unicode61` tokenizer treats comma and space
+   as the same separator, so `"verify_password, generate_session_token"` and
+   `"verify_password generate_session_token"` tokenize IDENTICALLY (indexed content is byte-identical
+   at the token level); and (2) the `auth_q1` query tokens (`authenticate`, `user`, `credentials`)
+   do not overlap the import string regardless. The FTS5 relevance ranking is identical; all recorded
+   tables in this section remain valid as-is.
+
+2. **minor — Module doc line 28 corrected: `/ k` → `/ min(k, |R|)`.**
+   Doc now matches implementation (`precision_at_k` uses `effective_k = min(len(retrieved), k)`).
+   The "verbatim for R2/R3 reuse" doc is now internally consistent with the code it documents.
+
+3. **minor — `total_results_found <= max_results` assertion added in `score_corpus`.**
+   The invariant (guaranteed by `storage.search` SQL LIMIT + dedup-only-shrinks) is now explicitly
+   asserted per query: `assert!(qresult.total_results_found <= max_results, ...)`. The `max_results`
+   value (20) is saved before `QueryOptions` is moved into `query(...)`.
+
+4. **minor — Brief GREEN keyword/semantic narrative corrected: 13 keyword / 2 semantic.**
+   The data corpus has 5 keyword + 0 semantic queries; only `auth_q5` and `config_q5` are semantic.
+   Total: 13 keyword + 2 semantic = 15 queries. The tables were already correct; only the prose
+   counts were wrong. Corrected everywhere in this section below.
+
+### Offline-dataset disposition (PLAINLY STATED)
+
+This is a **micro-suite proxy** for the real ContextBench corpus (arXiv:2602.05892). The real
+ContextBench dataset requires network access and is not vendorable offline. Per the brief's Scope
+fallback, a small committed gold-context fixture was built with the **same scoring protocol**
+ContextBench uses (Recall@k, Precision@k, F1 at file + block granularity), with hand-verified
+query→gold-file→gold-symbol-block labels. Research-track R2 swaps in the real ContextBench corpus
+using this identical scorer. The micro-suite is **not** the full ContextBench corpus.
+
+### Files added / changed
+
+| File | Change |
+|---|---|
+| `tests/fixtures/retrieval_quality/micro_suite.json` | NEW. Committed gold-context fixture: 3 corpora (auth\_module/Python, config\_module/TypeScript, data\_processing/Go) × 5 queries each = 15 queries total. Each query has `gold_files` + `gold_blocks` (hand-labeled). **13 keyword + 2 semantic queries** (4 keyword + 1 semantic for auth and config; 5 keyword + 0 semantic for data). **JSON is the SINGLE SOURCE OF TRUTH** — loaded by the Rust harness via `include_str!` + `serde_json`. |
+| `tests/retrieval_quality.rs` | NEW (updated in BLOCK resolution). Integration test + scorer harness. Contains: (a) serde types for JSON deserialization (`FixtureFile`, `FixtureCorpus`, `FixtureChunk`, `FixtureQuery`, `FixtureGoldBlock`); (b) `load_micro_suite()` loading from embedded JSON; (c) `build_chunk_from_fixture()` replacing the deleted `build_auth/config/data_corpus()` inline functions; (d) metric functions `recall_at_k`, `precision_at_k`, `f1_at_k`; (e) 14 unit tests for metric math; (f) one integration test `retrieval_quality_micro_suite`. Module doc line 28 corrected (`/ min(k, \|R\|)`). `total_results_found <= max_results` assertion added in `score_corpus`. |
+
+No new runtime dep added (serde + serde_json already in `[dependencies]`). No `src/` file touched. Scorer is test code only.
+
+### TDD confirmation
+
+14 metric unit tests were written first (RED) in `tests/retrieval_quality.rs::metric_unit_tests`:
+- `recall_at_k`: 6 tests covering perfect hit, miss, partial, full, empty gold, k > retrieved.
+- `precision_at_k`: 5 tests covering perfect, miss, partial, k > retrieved, empty retrieved.
+- `f1_at_k`: 3 tests covering perfect, zero/zero, hand-computed harmonic mean (0.8 = 4/5).
+All 14 pass. Implementation (the three functions) followed to go green.
+
+### Scoring method (verbatim — for R2/R3 reuse)
+
+**Gold-context format:** each query specifies `gold_files` (set of file path strings) and
+`gold_blocks` (set of `{file_path, symbol_name}` pairs). Both are hand-verified.
+
+**Metric definitions** (for retrieved ordered list R, gold set G, top-k prefix R_k):
+- **Recall@k** = |G ∩ R_k| / |G| (fraction of gold items in top-k; empty G → 1.0)
+- **Precision@k** = |G ∩ R_k| / effective_k (effective_k = min(k, len(R)); short lists not penalized)
+- **F1@k** = 2·P·R/(P+R) (harmonic mean; 0.0 if both are 0)
+
+**k values:** {1, 5, 10}.  **Granularities:** file (dedup by first occurrence of file_path in
+ranked result list) and block (`(file_path, symbol_name)` pairs).  **Aggregation:** macro-average
+across all queries (per-query metric computed independently, then averaged).
+
+**Seeding:** each corpus's chunks seeded into a fresh `:memory:` Storage via `Storage::insert_chunks`.
+Retriever: `Retriever::new(storage)` with `QueryOptions { max_tokens: 4000, max_results: 20, file_filter: None }` (§3.2.3 defaults).
+
+**How to add a query:** edit `tests/fixtures/retrieval_quality/micro_suite.json`, add to a corpus's
+`queries` array: `{id, query, query_type, note, gold_files, gold_blocks}`. Ensure the corpus's
+`chunks` array contains a chunk for every gold block. Re-run `cargo test --test retrieval_quality`.
+
+**Scoring method doc location:** module doc of `tests/retrieval_quality.rs` (verbatim, portable
+to R2/R3 without change).
+
+### Measured metrics (REAL numbers, 2026-06-12, Windows 11, Rust 1.85)
+
+#### Per-corpus macro-averages
+
+| Corpus | k | Recall (file) | Precision (file) | F1 (file) | Recall (block) | Precision (block) | F1 (block) |
+|---|---|---|---|---|---|---|---|
+| auth_module (9 chunks, 5 queries) | @1 | 0.700 | 0.800 | 0.733 | 0.600 | 0.800 | 0.667 |
+| auth_module | @5 | 0.800 | 0.300 | 0.433 | 0.800 | 0.270 | 0.394 |
+| auth_module | @10 | 0.800 | 0.300 | 0.433 | 0.800 | 0.247 | 0.369 |
+| config_module (6 chunks, 5 queries) | @1 | 0.800 | 0.800 | 0.800 | 0.700 | 0.800 | 0.733 |
+| config_module | @5 | 0.800 | 0.267 | 0.393 | 0.800 | 0.280 | 0.400 |
+| config_module | @10 | 0.800 | 0.267 | 0.393 | 0.800 | 0.280 | 0.400 |
+| data_processing (7 chunks, 5 queries) | @1 | 0.600 | 0.600 | 0.600 | 0.500 | 0.600 | 0.533 |
+| data_processing | @5 | 1.000 | 0.387 | 0.500 | 1.000 | 0.427 | 0.548 |
+| data_processing | @10 | 1.000 | 0.387 | 0.500 | 1.000 | 0.400 | 0.514 |
+
+#### Global macro-averages (keyword queries only, N=13; 4 keyword × 2 corpora + 5 keyword × 1 corpus)
+
+| Metric | @k=10 (file) | @k=10 (block) |
+|---|---|---|
+| **Recall** | **1.000** | **1.000** |
+| **F1** | **0.510** | **0.494** |
+
+#### Semantic query recall (informational only, D1 — BM25-only gap)
+
+| Queries | @k=10 Recall (file) | @k=10 Recall (block) |
+|---|---|---|
+| Semantic (N=2; auth\_q5 "error handling" + config\_q5 "settings not found") | **0.000** | **0.000** |
+
+BM25 correctly retrieves zero gold results for pure semantic queries ("error handling", "settings
+not found") where the query vocabulary does not appear verbatim in any indexed chunk. This
+demonstrates the D1-predicted recall gap. It is **informational only** — not a gate. R2 quantifies
+the embedding-interface advantage on the real corpus.
+
+#### Selected query detail (to illustrate per-query behavior)
+
+| Query | Type | @1 R(file) | @1 R(block) | @10 R(file) | @10 R(block) | Note |
+|---|---|---|---|---|---|---|
+| "authenticate user credentials" | keyword | 1.00 | 1.00 | 1.00 | 1.00 | Perfect recall; BM25 symbol-name weight wins |
+| "generate session token user" | keyword | 0.50 | 0.50 | 1.00 | 1.00 | @1 misses auth file; @10 finds both gold files |
+| "validate token expire session" | keyword | 1.00 | 1.00 | 1.00 | 1.00 | Single gold block, top-ranked |
+| "aggregate sum count records field" | keyword | 0.00 | 0.00 | 1.00 | 1.00 | @1 miss (multi-term dilution); @5+ finds both |
+| "error handling" | semantic | 0.00 | 0.00 | 0.00 | 0.00 | Pure semantic — BM25 gap confirmed (D1) |
+
+### BM25 baseline sanity vs CodeRAG-Bench
+
+Published BM25 NDCG@10 on Python function retrieval (RepoEval slice, Luo et al. 2025 /
+CodeRAG-Bench) ≈ 0.64. This micro-suite's Recall@10 (file, keyword) = **1.000**. Recall@k and
+NDCG@10 are different metrics (NDCG@10 accounts for rank position within the top-10; Recall@10
+only requires gold to appear anywhere in top-10), but a Recall@10 of 1.0 for keyword queries is
+qualitatively consistent with BM25 being a strong lexical retriever. Quantitative comparison to
+CodeRAG-Bench is not possible offline. R2 establishes the rigorous numerical baseline on the shared
+corpus. **Qualitative direction: PLAUSIBLE.**
+
+### Gate status
+
+- `cargo fmt --all -- --check`: CLEAN (exit 0)
+- `cargo clippy --all-targets -- -D warnings`: CLEAN (exit 0)
+- `cargo test --all`: CLEAN — **196 passed, 0 failed** (181 prior + 15 new: 14 metric unit tests + 1 integration test)
+- No new runtime dep: confirmed (serde + serde_json already in `[dependencies]`; no Cargo.toml change)
+- No new public library module: confirmed (scorer is in `tests/` only)
+- No `src/` file touched: confirmed
+- TDD: 14 metric unit tests written before implementation: confirmed
+- **No metric number changed after de-drifting** (auth_q1 import string comma→no-comma: `imports` IS indexed (bm25 2.0), but `unicode61` tokenizes comma and space identically so the indexed tokens are byte-identical; and auth_q1's query tokens do not overlap the import string anyway — BM25 ranking identical either way)
+
+### Escalation
+
+None. No new dep added. No new runtime API. No budget miss (retrieval quality has no hard gate at M10, per brief: "recorded vs gold (no hard gate @M10)"). The Recall@10 = 1.000 for keyword queries (N=13) and F1@10 = 0.51 (file) / 0.49 (block) are plausible BM25 baselines for small corpora with keyword-matched queries. Semantic recall = 0.000 for N=2 semantic queries is the expected D1 gap.
+
+> Status line: **M10.2 — RED ✅ (14 metric unit tests written first) · GREEN ✅ (BLOCK resolved — all 4 findings fixed) · REVIEW pending · DONE pending**
+
+### M10.2 — Layer-1 retrieval-quality scoring (D16) — **BLOCK** (code-reviewer, 2026-06-12)
+
+**Gate exit statuses (re-run locally, Windows 11 / Rust 1.85):**
+- `cargo fmt --all -- --check` → exit 0 (CLEAN)
+- `cargo clippy --all-targets -- -D warnings` → exit 0 (CLEAN)
+- `cargo test --all` → exit 0 — **196 passed, 0 failed** (counted: 181 prior + 15 new = 14 metric unit tests + 1 integration test)
+- Integration test run 3× → byte-identical output each run (DETERMINISTIC; no flake)
+
+**What is correct (verified):**
+- **Scope clean.** Working tree: only `BRIEF-…md` modified; `tests/retrieval_quality.rs` + `tests/fixtures/retrieval_quality/micro_suite.json` are new/untracked. No `src/` file and no `Cargo.toml` touched. No new dependency. Scorer is test-only (no new public module). The 8 `unwrap/expect` are all in test/harness code (acceptable — not shipped runtime).
+- **Metric math is correct** against the 14 hand-computed unit tests. recall_at_k (empty gold→1.0; `top_k = retrieved[..min(len,k)]`; hits/|gold|; bound-safe for k>len). precision_at_k (`effective_k = min(len,k)`; effective_k==0→0.0; hits/effective_k). f1_at_k (harmonic mean; exact `p+r==0.0` guard is safe — zero hits yields exactly 0.0 f64). All 14 tests assert real numbers (2/3, 0.5, 0.8, 1.0, 0.0), not range/is_finite checks. Edge cases covered: empty gold, empty retrieved, partial, full, k>retrieved, zero/zero F1.
+- **Scoring is genuine.** Integration test seeds a fresh `:memory:` `Storage` per corpus via the PUBLIC API (`Storage::new`/`init_schema`/`insert_chunks`), builds a real `Retriever`, runs real `query(...)` with §3.2.3 defaults, and scores the REAL ranked output (`r.chunk.file_path`/`symbol_name`) against the gold sets. Per-query numbers vary in ways only real BM25 retrieval produces (e.g. data_q2 / data_q5 @1 R=0.0 → @5 R=1.0; auth_q2 @1 R=0.50 → @5 R=1.0). Nothing is hardcoded. API usage matches `QueryResult.chunks: Vec<SearchResult>` / `SearchResult.chunk: Chunk`.
+- **Gold labels plausible.** Each gold (file,symbol) corresponds to a seeded chunk; semantic-query golds (auth_q5 "error handling"→authenticate_user; config_q5 "settings not found"→validateConfig/ConfigError) are reasonable targets that correctly score 0.0 under BM25 (the D1 gap), demonstrated honestly as informational, not gated.
+- **Offline disposition honest.** Module doc (lines 9-13) + brief GREEN both state plainly this is a micro-suite PROXY for ContextBench (arXiv ref), same protocol, not the real corpus; R2 swaps in the real dataset. No overclaiming.
+
+**Findings:**
+- **major — alignment/maintainability — `tests/retrieval_quality.rs` (whole harness) + `tests/fixtures/retrieval_quality/micro_suite.json`** — The committed JSON fixture is **never read** by the test. The three corpora are hardcoded inline in `build_auth_corpus`/`build_config_corpus`/`build_data_corpus`; there is no `include_str!`/`serde_json`/`read_to_string`. Yet the module doc (lines 42-47) and brief say the JSON is the "fixture-of-record" and instruct "edit `micro_suite.json` … re-run `cargo test`" — which would have ZERO effect on the test. Two sources of truth already drifted (e.g. auth_q1 import string: JSON `"...verify_password, generate_session_token"` vs Rust `"...verify_password generate_session_token"`). This undercuts the explicit "documented protocol for R2/R3 reuse" goal — R2 would edit the wrong file. **Fix (pick one):** (a) make the test load the JSON via `include_str!` + `serde_json::from_str` (serde_json already available per Cargo note) so the JSON truly drives the run; or (b) drop the JSON and reword the module doc + brief to say the inline Rust corpora are the fixture-of-record and "to add a query, edit `build_*_corpus`". Either removes the trap; do not ship two unsynced copies described as one.
+- **minor — `tests/retrieval_quality.rs:28-29` (module doc) vs implementation** — The metric-definition docstring states **"Precision@k = |G ∩ R_k| / k"**, but the implementation (and the brief scoring-method, line 345) use `/ effective_k = min(k, len(R))` (short lists not penalized), pinned by `precision_k_larger_than_retrieved`. The "verbatim for R2/R3 reuse" doc therefore contradicts the code it documents. **Fix:** change line 28 to `Precision@k = |G ∩ R_k| / min(k, |R|)` to match the implementation + the docstring at lines 84-88.
+- **minor — `tests/retrieval_quality.rs:897` — doc comment promises an assertion that is absent** — The integration-test doc says "total_results_found for any query must never exceed max_results (20)", but no such assertion exists in the body (only [0,1] range asserts + the keyword Recall/F1>0 gates). The invariant is true and tested in retriever_tests, but the doc over-claims. **Fix:** either add `assert!(qresult.total_results_found <= opts.max_results)` in `score_corpus`, or delete that bullet from the doc comment.
+- **minor — brief GREEN keyword/semantic counts wrong (recording error, not a math error)** — Brief repeatedly says "12 keyword × 3 corpora" / "N=12" and "Semantic (N=3)". Actual: **13 keyword + 2 semantic** (data corpus has 5 keyword, 0 semantic; only auth_q5 + config_q5 are semantic). The test prints `N=13` / `N=2` and the recorded metric tables are consistent with 13/2, so only the prose counts are off. **Fix:** correct the brief GREEN narrative to 13 keyword / 2 semantic.
+
+**15-vs-75 query-count scope read (manager owns the call):** The plan says "5 repos × ~15 queries" (~75); delivered is 3 corpora × 5 = 15. As a v0.1 **Layer-1 PROXY with no hard gate** (D16: "recorded vs gold"), the protocol + math + reproducibility are sound and the proxy is fit for purpose — it proves the scorer works end-to-end and surfaces the D1 semantic gap. I do **not** block on count. But it is a real ~5× under-delivery vs the documented plan and should be recorded as a deviation in the Decision Log, with R2 (real ContextBench, 5×~15) explicitly carrying the gap. Recommend the manager either (a) log the 15-query proxy as the accepted v0.1 deliverable + note R2 scales it, or (b) ask for the corpora to be widened toward ~75 before tag. My recommendation: accept (a) — the value here is the reusable scorer, not the sample size.
+
+**Verdict:** BLOCK — on the major fixture-of-record divergence (the JSON is dead weight described as the source of truth; R2/R3 reuse is the stated purpose and would be misled) plus three minor doc-accuracy fixes. The metric math, genuine real-retriever scoring, gold plausibility, determinism, gates (fmt/clippy/196 tests), TDD honesty, and offline disposition are all correct and APPROVE-ready. Resolve the JSON/inline duality (load it or drop it), fix the three docstring/count mismatches, and this is a fast re-review APPROVE. Not blocking on the 15-vs-75 count (manager records the deviation).
+
+> Status line: **M10.2 — RED ✅ · GREEN ✅ · REVIEW ✅ BLOCK (1 major + 3 minor, all doc/fixture-sync; math+scoring correct) · DONE pending**
+
+### M10.2 — RE-REVIEW — **APPROVE** (code-reviewer, 2026-06-12)
+
+Prior BLOCK was 1 major + 3 minor. All four are resolved; BLOCK cleared.
+
+**Gate exit statuses (re-run locally, Windows 11 / Rust 1.85):**
+- `cargo fmt --all -- --check` → exit 0 (CLEAN)
+- `cargo clippy --all-targets -- -D warnings` → exit 0 (CLEAN)
+- `cargo test --all` → exit 0 — **196 passed, 0 failed** (counted across all binaries)
+- No `src/` file and no `Cargo.toml` changed (working tree: only this brief modified;
+  `tests/retrieval_quality.rs` + `tests/fixtures/retrieval_quality/` untracked-new). No new dep.
+
+**Findings — each genuinely resolved:**
+1. **MAJOR (JSON duality) — RESOLVED.** No `build_*_corpus` inline fn remains (grep: 0 matches).
+   The JSON is the single source of truth: `load_micro_suite()` (`tests/retrieval_quality.rs:375-415`)
+   reads it via `include_str!("fixtures/retrieval_quality/micro_suite.json")` (line 376) +
+   `serde_json::from_str` (line 379) into typed `Deserialize` structs (`FixtureFile`/`FixtureCorpus`/
+   `FixtureChunk`/`FixtureQuery`/`FixtureGoldBlock`, lines 257-293); `build_chunk_from_fixture`
+   (line 328) builds the seeded `Chunk`s from the deserialized data. Editing the JSON now genuinely
+   changes the seeded corpus and thus the scored result. The "edit the JSON, re-run cargo test" doc
+   (lines 42-47, 254-255) is now literally true.
+   - **De-drift OUTCOME confirmed, but the brief's stated REASON is wrong (note for the record).**
+     The only drift was the `auth_q1` import string `"...verify_password, generate_session_token"`
+     (comma, JSON-authoritative) vs the old inline `"...verify_password generate_session_token"`
+     (space). No metric number changed — that part is correct and I re-confirmed it (196/0, same
+     recorded tables). BUT the brief (GREEN lines 329, 461) justifies this by claiming `imports` is
+     "UNINDEXED — not searched by FTS5 MATCH". That is **factually incorrect**: per
+     `src/storage/schema.rs:32` + `src/storage/queries.rs:36-38`, `imports` is the 5th INDEXED column
+     (bm25 weight 2.0); the UNINDEXED columns are only `file_path`/`start_byte`/`end_byte`/
+     `start_line`/`end_line`/`language`. The correct reason the metric is unchanged: (a) FTS5's
+     `unicode61` tokenizer treats BOTH comma and space as separators, so both strings tokenize to the
+     identical token stream `[verify_password, generate_session_token]` — indexed content is
+     token-identical; and (b) auth_q1's query tokens (`authenticate`/`user`/`credentials`) don't
+     overlap that import string regardless. The de-drift result stands; only the brief prose's
+     "UNINDEXED" claim is mistaken. NOT blocking (no code/metric impact) — manager may correct the
+     brief note and reconcile with the storage schema if desired.
+2. **minor (Precision@k doc) — RESOLVED.** Module doc line 28 reads `Precision@k = |G ∩ R_k| / min(k, |R|)`,
+   matching the impl `effective_k = retrieved.len().min(k)` (line 91) and the scoring-method doc (line 386).
+3. **minor (results-cap assertion) — RESOLVED.** `score_corpus` saves `max_results = 20` before moving
+   `opts` into `query(...)` and asserts `qresult.total_results_found <= max_results` per query
+   (lines 434, 446-451). The doc bullet (lines 424, 538) is now backed by a real assertion.
+4. **minor (brief prose 13/2) — RESOLVED.** GREEN now states 13 keyword + 2 semantic (lines 343-346,
+   361, 414), consistent with the JSON (auth 4kw+1sem, config 4kw+1sem, data 5kw+0sem) and the
+   test's printed `N=13`/`N=2`. Recorded metric tables were already consistent.
+
+**Still-correct (re-confirmed):** metric math vs the 14 hand-computed unit tests; genuine real-retriever
+scoring via the public `Storage`/`Retriever` API on a fresh `:memory:` DB per corpus; gold-label
+plausibility; deterministic output; honest offline-proxy disposition; semantic-gap (D1) reported not
+gated. All `unwrap/expect` remain test-only (acceptable). 15-query count accepted per manager (D16
+proxy, no hard gate; under-delivery-vs-"5×15" logged as a deviation with R2 carrying the gap) — not
+re-raised.
+
+**Verdict:** APPROVE. One non-blocking note for the manager: the brief's "imports is UNINDEXED" de-drift
+justification is incorrect (imports is indexed; the real reason is tokenizer-equivalence) — worth a
+one-line brief correction, but it has zero effect on code, metrics, or gates.
+
+> Status line: **M10.2 — RED ✅ · GREEN ✅ · REVIEW ✅ APPROVE (re-review; all 4 findings resolved) · DONE pending (manager)**
+
+### M10.2 — DONE ✅ (manager, 2026-06-12)
+- **Reviewer APPROVE** on re-review (the BLOCK's major JSON-duality finding + 3 minors all resolved:
+  `micro_suite.json` is now the single source of truth loaded via serde_json; doc/assertion/prose
+  fixes landed). Metric math test-first (14 unit tests), genuine real-retriever scoring via the
+  public API, deterministic.
+- **Manager corrections applied:** the brief's de-drift justification (mislabeling `imports` as
+  UNINDEXED) corrected — `imports` IS indexed (bm25 2.0); the real reason no metric changed is
+  `unicode61` tokenizes comma==space identically (and auth_q1 tokens don't overlap anyway).
+- **Decision logged: D21** — accept the 15-query offline micro-suite proxy as the v0.1 Layer-1
+  deliverable (no hard gate per D16; value is the reusable scorer + protocol; R2 carries the
+  expansion to the real ContextBench corpus + full 5×~15 + NDCG@10). The BM25-only semantic
+  recall gap (file Recall@10 = 0.000 on N=2 semantic queries) is the expected **D1** informational
+  signal, not a gate.
+- **Budgets:** keyword @k=10 file Recall 1.000 / F1≈0.51, block Recall 1.000 / F1≈0.49 — recorded
+  in `benches/CLAUDE.md` M10.2 section + `docs/TODO.md` Phase 10.
+- **Gates:** fmt / clippy -D warnings / test --all (**196**, +15 from M10.1's 181) all clean. No
+  src/ change, no new dependency, no new public API.
+- **Commit:** (filled at commit) — "M10.2: D16 Layer-1 retrieval-quality scoring …". **Slice DONE.**
