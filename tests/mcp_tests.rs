@@ -1151,3 +1151,335 @@ fn call_with_bad_arguments_returns_invalid_params() {
     );
     assert_error_code(&resp, -32602, 23);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// M8.4 — D14 self-healing search (RED).
+//
+// Before answering, `codecache_search` hash-checks the files implicated by the top results
+// (project_plan §8.2 "Self-healing search (D14)" + ROADMAP D14), transparently RE-INDEXES the ones
+// whose on-disk content changed since indexing, DROPS results whose file was DELETED on disk (and
+// evicts its now-stale chunks so a second search never returns them), then RE-RUNS the query ONCE
+// and formats THAT fresh result. A clean (unchanged) result set ⇒ NO re-index writes. The self-heal
+// is BOUNDED to the files surfaced by the first query (cost ∝ result count, overview §5.2), not the
+// whole index.
+//
+// These tests drive the REAL self-healing path: the index must reflect a file's ORIGINAL bytes, the
+// test then mutates/deletes that file behind the index's back, and the assertion proves the server
+// healed before answering. So they seed through `codecache::init` + `codecache::index` against a
+// REAL on-disk temp project (giving `files_metadata` true content+mtime hashes via §4.4) and build
+// the server over THAT db — the stored `file_path`s are absolute-under-root, so the handler can
+// re-hash + re-index them straight from disk.
+//
+// ── PINNED M8.4 DECISIONS (the eng-lead must honor — these tests are the contract) ───────────────
+//
+//   1. ALGORITHM (`handle_search`): (a) run the query once → collect the DISTINCT `file_path`s of the
+//      results; (b) for each implicated file, `hasher::is_changed(path, Storage::get_file_hash(path))`
+//      — CHANGED & still on disk ⇒ `Indexer::update_files(&[path])` (transparent re-index); DELETED on
+//      disk (`compute_file_hash` errors / path missing) ⇒ `delete_chunks_for_file` + `delete_file_meta`
+//      (EVICT, never panic); UNCHANGED ⇒ leave untouched (NO write); (c) re-run the query ONCE and
+//      format that fresh `QueryResult` with the §6.4.3 text formatter. The healing is bounded to the
+//      first query's result files only.
+//
+//   2. STALENESS-WINDOW METRIC HOOK (overview §5.2 Layer 3). The slice exposes a small, observable
+//      counter set for the LAST search, reachable AFTER the server is moved into `serve`. Pinned shape:
+//
+//          // src/mcp_server/mod.rs (or a submodule, re-exported)
+//          #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+//          pub struct StalenessStats {
+//              pub files_checked: usize,    // distinct result files hash-checked this search
+//              pub files_reindexed: usize,  // changed-on-disk files transparently re-indexed
+//              pub files_dropped: usize,    // deleted-on-disk files evicted + dropped from results
+//          }
+//
+//      `CodeCacheServer` exposes a CHEAP, shared handle grabbed BEFORE the `serve` move (so the
+//      `serve(reader, writer, server)` signature is UNCHANGED — do not touch it):
+//
+//          impl CodeCacheServer { pub fn staleness_handle(&self) -> StalenessHandle; }
+//          impl StalenessHandle { pub fn last(&self) -> StalenessStats; }
+//
+//      i.e. `StalenessHandle` wraps a `Clone` (e.g. `Arc<Mutex<StalenessStats>>`) the server writes
+//      at the end of each `handle_search`; tests clone the handle, run a search through `serve`, then
+//      read `handle.last()`. (Any equivalent SMALL surface that lets a test observe checked/reindexed/
+//      dropped counts after the search is acceptable, but match these field names — the tests pin them.)
+//      Non-search tool calls leave the stats at their previous value; a fresh server reads `Default`
+//      (all zero).
+//
+//   3. NO-WRITE OBSERVABLE (test 2). A clean search must not re-index any result file. Pinned two ways
+//      (both asserted): (a) the metric hook reports `files_reindexed == 0`; (b) the stored
+//      `Storage::get_file_hash(path)` for each result file is BYTE-IDENTICAL across the search (an
+//      unnecessary re-index would re-stamp it — §4.4 hashes content+mtime). `files_checked` MAY be > 0
+//      (the files were hash-checked — that is the cheap read), but NO write occurred.
+//
+// These fail now because `handle_search` (src/mcp_server/handlers.rs) does a single `Retriever::query`
+// with no hash-check / re-index / eviction, and neither `StalenessStats`/`StalenessHandle` nor
+// `staleness_handle()` exist — so tests 1–4 fail to compile (handle hook) and, once stubbed, assert the
+// stale/un-healed values. That is the RED state.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+use codecache::mcp_server::StalenessStats;
+
+/// Build a server over a REAL on-disk project: `init`, write `files` (relative path → LF content),
+/// then `index`, then open the indexed DB and wrap it in a `CodeCacheServer`. Returns the server,
+/// the live temp dir (KEEP it alive, dropping it deletes the fixture), and the project root so a
+/// test can mutate the very files the index was built from. The stored `file_path`s are
+/// absolute-under-root, so the self-healing handler re-hashes/re-indexes them straight from disk.
+fn test_server_on_disk(files: &[(&str, &str)]) -> (CodeCacheServer, tempfile::TempDir, PathBuf) {
+    let tmp = tempfile::tempdir().expect("create temp project dir");
+    let root = tmp.path().to_path_buf();
+    codecache::init(&root).expect("init project");
+    for (rel, content) in files {
+        let path = root.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create source subdir");
+        }
+        std::fs::write(&path, content).expect("write source file");
+    }
+    codecache::index(&root).expect("initial index");
+
+    let db_path = root.join(".codecache").join("index.db");
+    let storage = Storage::new(&db_path).expect("open indexed db");
+    (CodeCacheServer::new(storage), tmp, root)
+}
+
+/// Drive `server` (consumed) with one `codecache_search` request and return BOTH the parsed
+/// response and the staleness stats the server recorded for that search. Grabs the metric handle
+/// BEFORE moving the server into `serve` (the `serve` signature is unchanged), then reads it after.
+fn search_with_stats(
+    server: CodeCacheServer,
+    id: i64,
+    query: &str,
+) -> (serde_json::Value, StalenessStats) {
+    let handle = server.staleness_handle();
+    let resp = tools_call(
+        server,
+        id,
+        "codecache_search",
+        serde_json::json!({ "query": query }),
+    );
+    (resp, handle.last())
+}
+
+// ── 16. THE headline D14 test: a file edited behind the index returns FRESH content ──────────────
+
+/// `codecache_search` heals before answering: index a file whose matching chunk says X, EDIT the
+/// file on disk so that chunk now says X' (a renamed body symbol) WITHOUT re-indexing, then search a
+/// term that matches the file → the response reflects the EDITED content (X'), proving a transparent
+/// re-index-before-answer. The stale token (X) must NOT survive; the metric reports one re-index.
+#[test]
+fn search_after_file_edit_returns_fresh_content() {
+    // ORIGINAL: the matching chunk body references `legacy_password_check`.
+    let (server, _tmp, root) = test_server_on_disk(&[(
+        "auth.py",
+        "def authenticate_user(username, password):\n    return legacy_password_check(username, password)\n",
+    )]);
+
+    // EDIT behind the index's back: same function name (so the query still surfaces it) but the body
+    // now references `argon2_verify`. mtime/content change ⇒ the stored §4.4 hash no longer matches.
+    std::fs::write(
+        root.join("auth.py"),
+        "def authenticate_user(username, password):\n    return argon2_verify(username, password)\n",
+    )
+    .expect("edit source file on disk");
+
+    let (resp, stats) = search_with_stats(server, 30, "authenticate user");
+    assert_eq!(
+        resp.get("id").and_then(|v| v.as_i64()),
+        Some(30),
+        "search response must echo the request id; got: {resp}"
+    );
+
+    let text = call_result_text(&resp);
+    assert!(
+        text.contains("argon2_verify"),
+        "self-heal must re-index the edited file and return its FRESH body; got: {text:?}"
+    );
+    assert!(
+        !text.contains("legacy_password_check"),
+        "the STALE pre-edit body must NOT survive a self-healing search; got: {text:?}"
+    );
+    assert_eq!(
+        stats.files_reindexed, 1,
+        "exactly the one edited result file must be transparently re-indexed; got: {stats:?}"
+    );
+}
+
+// ── 17. clean (unchanged) result files ⇒ NO re-index writes ───────────────────────────────────────
+
+/// A search over an UNCHANGED on-disk index re-indexes NOTHING. Pinned two ways: the metric reports
+/// `files_reindexed == 0`, AND every result file's stored §4.4 content hash is byte-identical across
+/// the search (an unnecessary re-index would re-stamp it). The files MAY be hash-checked
+/// (`files_checked` is the cheap read) but never re-written.
+#[test]
+fn search_on_unchanged_files_does_no_reindex_writes() {
+    let (server, _tmp, root) = test_server_on_disk(&[
+        (
+            "auth.py",
+            "def authenticate_user(username, password):\n    return verify(username, password)\n",
+        ),
+        (
+            "math.py",
+            "def compute_factorial(n):\n    return product(range(1, n + 1))\n",
+        ),
+    ]);
+
+    // Snapshot the stored hashes of the files the query will surface BEFORE the search. We read them
+    // off a sibling Storage handle over the same on-disk DB (D8: cheap clone over one connection).
+    let db_path = root.join(".codecache").join("index.db");
+    let probe = Storage::new(&db_path).expect("open indexed db for probing");
+    let auth_abs = root.join("auth.py");
+    let hash_before = probe
+        .get_file_hash(&auth_abs)
+        .expect("read stored hash")
+        .expect("auth.py must have a stored hash after indexing");
+
+    let (resp, stats) = search_with_stats(server, 31, "authenticate user");
+    // The search still succeeds and surfaces the (unchanged) file.
+    let text = call_result_text(&resp);
+    assert!(
+        text.contains("authenticate_user"),
+        "an unchanged search must still return the matching symbol; got: {text:?}"
+    );
+
+    // (a) metric observable: nothing re-indexed.
+    assert_eq!(
+        stats.files_reindexed, 0,
+        "a clean (unchanged) result set must trigger NO re-index; got: {stats:?}"
+    );
+
+    // (b) storage observable: the result file's stored hash is byte-identical across the search — a
+    // spurious re-index would re-stamp it (§4.4 hashes content+mtime).
+    let hash_after = probe
+        .get_file_hash(&auth_abs)
+        .expect("read stored hash")
+        .expect("auth.py must still have a stored hash after a clean search");
+    assert_eq!(
+        hash_before, hash_after,
+        "a clean search must not re-stamp the stored hash (no spurious re-index)"
+    );
+}
+
+// ── 18. a result file deleted on disk is dropped + its stale chunks evicted ───────────────────────
+
+/// `codecache_search` for a term whose only match lives in a file DELETED from disk drops that file
+/// from the results WITHOUT panicking/erroring (a clean, possibly-empty result), and EVICTS the
+/// file's now-stale chunks so a SECOND search never returns them either. The metric reports one drop.
+#[test]
+fn search_result_file_deleted_on_disk_is_dropped_from_results() {
+    let (server, _tmp, root) = test_server_on_disk(&[(
+        "ghost.py",
+        "def haunted_function(spectre):\n    return spectre.materialize()\n",
+    )]);
+
+    // DELETE the only file matching the query, behind the index's back.
+    std::fs::remove_file(root.join("ghost.py")).expect("delete source file on disk");
+
+    // First search: must NOT panic/error, and must NOT surface the deleted file's symbol.
+    let (resp, stats) = search_with_stats(server, 32, "haunted function");
+    assert_eq!(
+        resp.get("id").and_then(|v| v.as_i64()),
+        Some(32),
+        "search response must echo the request id even when a result file vanished; got: {resp}"
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "a deleted result file must be handled gracefully, NOT as a JSON-RPC error; got: {resp}"
+    );
+    let text = call_result_text(&resp);
+    assert!(
+        !text.contains("haunted_function"),
+        "a result whose file was deleted on disk must be dropped from the response; got: {text:?}"
+    );
+    assert_eq!(
+        stats.files_dropped, 1,
+        "the deleted result file must be counted as dropped; got: {stats:?}"
+    );
+
+    // The stale chunk must be EVICTED: a second, fresh server over the same DB must not return it,
+    // proving the eviction was persisted (not just filtered in-memory for the first response).
+    let db_path = root.join(".codecache").join("index.db");
+    let storage2 = Storage::new(&db_path).expect("reopen indexed db");
+    let server2 = CodeCacheServer::new(storage2);
+    let resp2 = tools_call(
+        server2,
+        33,
+        "codecache_search",
+        serde_json::json!({ "query": "haunted function" }),
+    );
+    let text2 = call_result_text(&resp2);
+    assert!(
+        !text2.contains("haunted_function"),
+        "the deleted file's stale chunk must be EVICTED so a later search never returns it; got: {text2:?}"
+    );
+}
+
+// ── 19. self-heal is BOUNDED to the result files (cost ∝ result count) ────────────────────────────
+
+/// The self-heal only touches files SURFACED by the first query, not the whole index. Index two
+/// unrelated files; edit BOTH on disk; search a term that matches only the FIRST → the surfaced file
+/// is re-indexed (its fresh body returns) but the UNRELATED edited file is left stale (not checked,
+/// not re-indexed). Pins the D14 bound (overview §5.2): healing cost is proportional to result count.
+#[test]
+fn search_self_heal_is_bounded_to_result_files() {
+    let (server, _tmp, root) = test_server_on_disk(&[
+        (
+            "alpha.py",
+            "def alpha_widget():\n    return old_alpha_value()\n",
+        ),
+        (
+            "beta.py",
+            "def beta_gadget():\n    return old_beta_value()\n",
+        ),
+    ]);
+
+    // Edit BOTH files behind the index's back.
+    std::fs::write(
+        root.join("alpha.py"),
+        "def alpha_widget():\n    return new_alpha_value()\n",
+    )
+    .expect("edit alpha.py");
+    std::fs::write(
+        root.join("beta.py"),
+        "def beta_gadget():\n    return new_beta_value()\n",
+    )
+    .expect("edit beta.py");
+
+    // Query matches only alpha — beta is never surfaced, so it must not be hash-checked/re-indexed.
+    let (resp, stats) = search_with_stats(server, 34, "alpha widget");
+    let text = call_result_text(&resp);
+    assert!(
+        text.contains("new_alpha_value"),
+        "the surfaced file must be healed to its fresh body; got: {text:?}"
+    );
+    assert!(
+        !text.contains("alpha_widget") || !text.contains("old_alpha_value"),
+        "the surfaced file's stale body must not survive; got: {text:?}"
+    );
+
+    // Exactly one file (alpha) was checked + re-indexed; the unrelated edited beta was NOT touched.
+    assert_eq!(
+        stats.files_checked, 1,
+        "only the result file may be hash-checked (cost ∝ result count, D14); got: {stats:?}"
+    );
+    assert_eq!(
+        stats.files_reindexed, 1,
+        "only the surfaced file may be re-indexed; the unrelated edit stays stale; got: {stats:?}"
+    );
+
+    // Proof beta stayed stale: its stored chunk still references the OLD body (it was never healed).
+    let db_path = root.join(".codecache").join("index.db");
+    let probe = Storage::new(&db_path).expect("open indexed db for probing");
+    let beta_abs = root.join("beta.py");
+    let beta_changed = codecache::hasher::is_changed(
+        &beta_abs,
+        probe
+            .get_file_hash(&beta_abs)
+            .expect("read beta hash")
+            .as_deref(),
+    )
+    .expect("hash-check beta");
+    assert!(
+        beta_changed,
+        "beta.py was edited but never surfaced, so the index must still hold its STALE hash \
+         (a whole-index re-heal would have updated it — D14 bounds the heal to result files)"
+    );
+}

@@ -15,6 +15,7 @@ mod handlers;
 mod tools;
 
 use std::io::{BufRead, Write};
+use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 
@@ -31,17 +32,60 @@ const PARSE_ERROR: i64 = -32700;
 const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
 
+/// Staleness-window metric for the LAST self-healing `codecache_search` (overview §5.2 Layer 3,
+/// D14). A fresh server reads `Default` (all zero); a non-search tool call leaves the previous
+/// value untouched. The counts are bounded to the files the first query surfaced — the heal cost
+/// is proportional to the result count, never the whole index.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StalenessStats {
+    /// Distinct result files hash-checked this search.
+    pub files_checked: usize,
+    /// Changed-on-disk result files that were transparently re-indexed.
+    pub files_reindexed: usize,
+    /// Deleted-on-disk result files that were evicted and dropped from the results.
+    pub files_dropped: usize,
+}
+
+/// A cheaply-cloneable handle onto the server's last-search [`StalenessStats`]. Tests (and any
+/// observer) grab it via [`CodeCacheServer::staleness_handle`] BEFORE the server is moved into
+/// [`serve`], then read [`StalenessHandle::last`] after the search. Wraps the same
+/// `Arc<Mutex<StalenessStats>>` the server writes at the end of each self-healing search.
+#[derive(Clone)]
+pub struct StalenessHandle(Arc<Mutex<StalenessStats>>);
+
+impl StalenessHandle {
+    /// The staleness stats the server recorded for its most recent self-healing search. Returns
+    /// `Default` (all zero) if no search has run yet. A poisoned lock falls back to `Default`
+    /// rather than panicking (the metric is observational, never load-bearing).
+    pub fn last(&self) -> StalenessStats {
+        self.0.lock().map(|s| *s).unwrap_or_default()
+    }
+}
+
 /// The MCP server context. Holds the shared [`Storage`] (D8) so M8.2–M8.4 can lend it to
 /// `Retriever`/`Indexer` without changing this seam. The M8.1 handshake path does not read it.
 pub struct CodeCacheServer {
     /// The shared connection (D8), lent onward to the `Retriever`/`Indexer` built per `tools/call`.
     storage: Storage,
+    /// The last self-healing search's staleness metric (D14). Shared with any [`StalenessHandle`]
+    /// grabbed before the server is moved into [`serve`].
+    staleness: Arc<Mutex<StalenessStats>>,
 }
 
 impl CodeCacheServer {
     /// Build a server over a shared `Storage` (D8: one `Arc<Mutex<Connection>>` lent onward).
     pub fn new(storage: Storage) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            staleness: Arc::new(Mutex::new(StalenessStats::default())),
+        }
+    }
+
+    /// A cheap, shared handle onto this server's last-search staleness metric (D14). Grab it
+    /// BEFORE moving the server into [`serve`] (which leaves `serve`'s signature unchanged), then
+    /// read [`StalenessHandle::last`] after a search to observe checked/reindexed/dropped counts.
+    pub fn staleness_handle(&self) -> StalenessHandle {
+        StalenessHandle(Arc::clone(&self.staleness))
     }
 
     /// Dispatch one parsed JSON-RPC request object to its handler, returning the JSON value to
@@ -117,7 +161,9 @@ impl CodeCacheServer {
         let arguments = params.get("arguments").unwrap_or(&empty);
 
         let text = match name {
-            "codecache_search" => handlers::handle_search(&self.storage, arguments),
+            "codecache_search" => {
+                handlers::handle_search(&self.storage, arguments, &self.staleness)
+            }
             "codecache_update" => handlers::handle_update(&self.storage, arguments),
             "codecache_outline" => handlers::handle_outline(&self.storage, arguments),
             other => Err((INVALID_PARAMS, format!("unknown tool: {other}"))),

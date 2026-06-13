@@ -64,9 +64,24 @@ failure (retrieval/index/storage error) → `-32603`. `CodeCacheServer` now hold
 `Indexer` over its shared `Storage` (D8); the `serve` loop dispatches `&mut self` so `update` can
 mutate the index. No reachable `unwrap/expect/panic`.
 
+## Shipped API (M8.4 — D14 self-healing search)
+`handle_search` is self-healing: it runs the query once to find the **distinct result file paths**
+(bounded — only surfaced files), hash-checks each that has a stored §4.4 hash
+(`hasher::is_changed` vs `Storage::get_file_hash`), then: changed+readable → `Indexer::update_files`;
+deleted/unreadable on disk → evict (`delete_chunks_for_file` + `delete_file_meta`) and drop it (the
+hash `Err` is the deletion signal — never propagated, never a panic); unchanged → no write. It
+re-runs the query **once** over the now-fresh index and formats that. A result file with **no stored
+hash** (content inserted without an on-disk source) has no staleness window and is skipped (keeps the
+heal keyed off real indexed files — spec §8.2). Per-search metric:
+`StalenessStats { files_checked, files_reindexed, files_dropped }` (Copy/Default) exposed via
+`CodeCacheServer::staleness_handle() -> StalenessHandle` (`.last()`); a poisoned metric lock degrades
+to `Default`, never failing the search. `serve(reader, writer, server)` signature unchanged.
+
 ## Status
 M0: empty stub. **M8.1 DONE (2026-06-12):** JSON-RPC framing + `initialize` handshake + error
 mapping; `serve` stub replaced (stdio wired; SSE → clean unsupported error, D4); all four gates green.
 **M8.2 DONE (2026-06-12):** `tools/list` with all three D13 tool schemas (`tools.rs`); schemas match
 §8.2 char-for-char. **M8.3 DONE (2026-06-12):** `tools/call` round-trip (search/update/outline) +
-`handlers.rs` + D19 `symbols_for_path`; reviewer APPROVED; 162 tests green (Rust 1.85). M8.4 pending.
+`handlers.rs` + D19 `symbols_for_path`. **M8.4 DONE (2026-06-12):** D14 self-healing search +
+`StalenessStats` hook; reviewer APPROVED (0 findings). **M8 COMPLETE** — 166 tests green, all four
+gates clean (Rust 1.85). v0.1 MCP surface (stdio, 3 tools, self-healing) frozen; SSE/HTTP = v0.2 (D4).

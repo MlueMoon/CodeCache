@@ -202,7 +202,7 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       nonzero with stderr + no panic. Verification-only (M7.3 handlers already GREEN); reviewer
       APPROVED (0 findings). ROADMAP M7 exit criteria met end-to-end.
 
-## Phase 8 — mcp_server (M8) · plan: [plans/M8-mcp-server.md](plans/M8-mcp-server.md) · brief: [.claude/briefs/BRIEF-M8-mcp-server.md](../.claude/briefs/BRIEF-M8-mcp-server.md)
+## Phase 8 — mcp_server (M8) · plan: [plans/M8-mcp-server.md](plans/M8-mcp-server.md) · brief: [.claude/briefs/BRIEF-M8-mcp-server.md](../.claude/briefs/BRIEF-M8-mcp-server.md) · **DONE 2026-06-12** (M8.0 D15 · M8.1 08fc6c7 · M8.2 7021b78 · M8.3 66ec107 · M8.4 <pending-commit>)
 - [x] **Entry (D15) RESOLVED 2026-06-12**: human-ratified **hand-roll JSON-RPC over stdio** for v0.1
       (serde/serde_json only, no new runtime dep; `rmcp` re-evaluated at v0.2 behind the D4 seam).
       ROADMAP D15 flipped to RESOLVED; project_plan §10.2 updated; §10.3 confirmed needs no new dep.
@@ -225,9 +225,12 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       unknown tool / missing-arg → -32602, handler-internal failure → -32603. Handlers in
       `src/mcp_server/handlers.rs`; `serve` loop now `&mut`. 7 new tests (mcp_tests 15/15, storage
       21/21); reviewer APPROVED (D19 SQL injection-safe + prefix/escape correct); 162 tests green.
-- [ ] **M8.4 — D14 self-healing search**: `codecache_search` hash-checks result files + transparently
-      re-indexes changed ones; RED test = stale-file query returns fresh content → test-lead →
-      engineering-lead
+- [x] **M8.4 — D14 self-healing search** *(DONE 2026-06-12)*: `codecache_search` hash-checks only the
+      files implicated by top results → re-indexes changed ones, evicts files deleted on disk (no
+      panic), re-runs once, formats fresh. Clean files = no writes. Per-search staleness metric
+      (`files_checked`/`files_reindexed`/`files_dropped`) via `CodeCacheServer::staleness_handle()`.
+      Boundary: results without a stored §4.4 hash have no staleness window (spec §8.2). 4 new tests
+      (mcp_tests 19/19); reviewer APPROVED (0 findings); 166 tests green, all four gates clean.
 
 ## Phase 9 — TypeScript + Go (M9) · plan: [plans/M9-typescript-go.md](plans/M9-typescript-go.md)
 - [ ] RED tests: per-language fixtures → test-lead

@@ -9,25 +9,37 @@
 //! `(-32603, message)` (internal error) via `?`, and argument-shape failures as `-32602`.
 
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
 use crate::config::Config;
 use crate::formatter::{self, Format};
+use crate::hasher;
 use crate::indexer::Indexer;
-use crate::retriever::{QueryOptions, Retrieve, Retriever};
+use crate::retriever::{QueryOptions, QueryResult, Retrieve, Retriever};
 use crate::storage::Storage;
 use crate::types::SymbolOutline;
+
+use super::StalenessStats;
 
 /// JSON-RPC "invalid params" (a malformed/missing tool argument).
 const INVALID_PARAMS: i64 = -32602;
 /// JSON-RPC "internal error" (a retrieval/index/storage failure while executing a tool).
 const INTERNAL_ERROR: i64 = -32603;
 
-/// `codecache_search` (§8.2/§8.3): `query` (required), `max_tokens` (default 4000), `file_filter`
-/// (optional). Runs [`Retriever::query`] over the shared storage and formats the hits with the M7
-/// agent-first text formatter (§6.4.3, D13) so the locator/header shape matches the CLI goldens.
-pub(super) fn handle_search(storage: &Storage, args: &Value) -> Result<String, (i64, String)> {
+/// `codecache_search` (§8.2/§8.3, D14 self-healing): `query` (required), `max_tokens`
+/// (default 4000), `file_filter` (optional). Before answering, the handler hash-checks ONLY the
+/// files surfaced by a first query (heal cost ∝ result count, overview §5.2), transparently
+/// re-indexes the ones whose on-disk content changed, evicts the ones deleted on disk, then
+/// re-runs the query ONCE and formats THAT fresh result with the M7 agent-first text formatter
+/// (§6.4.3, D13). A clean (unchanged) result set triggers NO re-index writes. The staleness-window
+/// metric (checked / reindexed / dropped) is recorded into `staleness` at the end of the search.
+pub(super) fn handle_search(
+    storage: &Storage,
+    args: &Value,
+    staleness: &Arc<Mutex<StalenessStats>>,
+) -> Result<String, (i64, String)> {
     let query = require_str(args, "query")?;
     let max_tokens = optional_usize(args, "max_tokens")?.unwrap_or(4000);
     let file_filter = args
@@ -35,19 +47,93 @@ pub(super) fn handle_search(storage: &Storage, args: &Value) -> Result<String, (
         .and_then(Value::as_str)
         .map(|f| vec![PathBuf::from(f)]);
 
-    let retriever = Retriever::new(storage.clone());
-    let result = retriever
-        .query(
-            query,
-            QueryOptions {
-                max_tokens,
-                file_filter,
-                ..Default::default()
-            },
-        )
-        .map_err(|e| (INTERNAL_ERROR, format!("search failed: {e}")))?;
+    let options = || QueryOptions {
+        max_tokens,
+        file_filter: file_filter.clone(),
+        ..Default::default()
+    };
 
-    Ok(formatter::format(&result, query, Format::Text))
+    let retriever = Retriever::new(storage.clone());
+
+    // (a) Run the query once to find the implicated files = the distinct `file_path`s of the hits.
+    let first = run_query(&retriever, query, options())?;
+    let implicated = distinct_files(&first);
+
+    // (b) Heal each implicated file: re-index a changed-but-present file, evict a deleted one.
+    // Only files tracked in `files_metadata` (a stored content+mtime hash, §4.4) are part of the
+    // staleness window — those are the genuinely-indexed files the heal protects. A result chunk
+    // with no stored hash (e.g. directly seeded, never indexed from disk) is left untouched: there
+    // is no on-disk source to compare against, so it is neither checked nor re-indexed.
+    let mut stats = StalenessStats::default();
+    for path in &implicated {
+        let cached = storage
+            .get_file_hash(path)
+            .map_err(|e| (INTERNAL_ERROR, format!("staleness check failed: {e}")))?;
+        let Some(cached) = cached else {
+            continue;
+        };
+        stats.files_checked += 1;
+        match hasher::is_changed(path, Some(cached.as_str())) {
+            // Changed and still readable on disk → transparent re-index.
+            Ok(true) => {
+                let mut indexer =
+                    Indexer::new(Config::default(), storage.clone(), PathBuf::from("."))
+                        .map_err(|e| (INTERNAL_ERROR, format!("could not build indexer: {e}")))?;
+                indexer
+                    .update_files(std::slice::from_ref(path))
+                    .map_err(|e| (INTERNAL_ERROR, format!("re-index failed: {e}")))?;
+                stats.files_reindexed += 1;
+            }
+            // Unchanged → leave untouched (NO write).
+            Ok(false) => {}
+            // Unreadable / deleted on disk → the hash error IS the deletion signal: evict the
+            // file's now-stale chunks + metadata so a later search never returns them. Never an
+            // error, never a panic.
+            Err(_) => {
+                storage
+                    .delete_chunks_for_file(path)
+                    .map_err(|e| (INTERNAL_ERROR, format!("eviction failed: {e}")))?;
+                storage
+                    .delete_file_meta(path)
+                    .map_err(|e| (INTERNAL_ERROR, format!("eviction failed: {e}")))?;
+                stats.files_dropped += 1;
+            }
+        }
+    }
+
+    // (c) Re-run the query ONCE and format THAT fresh result.
+    let fresh = run_query(&retriever, query, options())?;
+
+    // Record the staleness-window metric for this search (observational; a poisoned lock is
+    // ignored rather than propagated — the metric must never fail the search).
+    if let Ok(mut cell) = staleness.lock() {
+        *cell = stats;
+    }
+
+    Ok(formatter::format(&fresh, query, Format::Text))
+}
+
+/// Run one retrieval query, mapping a retrieval failure to `-32603` (internal error).
+fn run_query(
+    retriever: &Retriever,
+    query: &str,
+    options: QueryOptions,
+) -> Result<QueryResult, (i64, String)> {
+    retriever
+        .query(query, options)
+        .map_err(|e| (INTERNAL_ERROR, format!("search failed: {e}")))
+}
+
+/// The distinct result `file_path`s of a query, in first-seen order (deterministic — the query
+/// result is already in the stable D-order). This is the bounded set the self-heal touches.
+fn distinct_files(result: &QueryResult) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = Vec::new();
+    for hit in &result.chunks {
+        if !files.contains(&hit.chunk.file_path) {
+            files.push(hit.chunk.file_path.clone());
+        }
+    }
+    files
 }
 
 /// `codecache_update` (§8.2/§8.3): `files` (required string array). Re-indexes the named files via

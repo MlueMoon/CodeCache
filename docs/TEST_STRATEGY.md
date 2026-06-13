@@ -101,8 +101,17 @@ this document is the source for "what scenarios must a slice cover" referenced b
   [search,update,outline] stable across two calls. (`max_tokens` defaults pinned as JSON numbers,
   `file_filter` default as JSON null.)
 - `codecache_outline` returns the symbol skeleton from the index (no source reads — D7/D13).
-- Self-healing search (D14): query after an out-of-band file edit returns fresh content;
-  unchanged files ⇒ no re-index writes; result file deleted on disk ⇒ dropped, no panic.
+- **M8.4 self-healing search (D14):** over a REAL on-disk index (seed via `init`+`index`, then
+  mutate files behind the index): (1) a result file EDITED on disk ⇒ search returns FRESH content,
+  stale token gone, `files_reindexed == 1`; (2) UNCHANGED result files ⇒ NO re-index writes, pinned
+  two ways — metric `files_reindexed == 0` AND stored §4.4 hash byte-identical across the search;
+  (3) a result file DELETED on disk ⇒ dropped from results, no panic/JSON-RPC error, stale chunks
+  EVICTED (a second server over the same DB never returns it), `files_dropped == 1`; (4) self-heal
+  is BOUNDED to the first query's result files — an unrelated edited-but-unsurfaced file is NOT
+  hash-checked/re-indexed (`files_checked == 1`, the unsurfaced file stays stale). Metric hook:
+  `CodeCacheServer::staleness_handle() -> StalenessHandle`; `StalenessHandle::last() ->
+  StalenessStats { files_checked, files_reindexed, files_dropped }` (grabbed before the `serve`
+  move; `serve` signature unchanged).
 
 ---
 

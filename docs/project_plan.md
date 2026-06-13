@@ -1344,7 +1344,14 @@ agent-first form); the **JSON** format (§6.4.2) is field-keyed, so order is not
 
 **Self-healing search (D14).** Before answering, `codecache_search` hash-checks the files
 implicated by the top results (cheap — hashes are stored, §4.4) and transparently re-indexes
-any that changed, so results are correct-by-construction and never stale.
+any that changed, so results are correct-by-construction and never stale. A result file deleted
+from disk is **evicted** (its stale chunks + `files_metadata` row dropped) and removed from the
+answer — never a panic. The heal cost is bounded by the result count (only surfaced files are
+checked). The window is keyed off the **stored §4.4 hash**: a result whose file has no
+`files_metadata` row (e.g. content inserted into the index without an on-disk source) has no
+staleness window and is left untouched. Implemented at **M8.4**; the per-search staleness metric
+(`files_checked` / `files_reindexed` / `files_dropped`) is exposed via
+`mcp_server::CodeCacheServer::staleness_handle()` (overview §5.2 Layer 3).
 
 #### Tool 1: `codecache_search`
 

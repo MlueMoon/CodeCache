@@ -2,7 +2,7 @@
 
 - **Milestone:** M8 — mcp_server  ·  **Module(s):** mcp_server, cli/serve
 - **Owner (manager):** principal-engineering-manager  ·  **Created:** 2026-06-12
-- **Status:** D15 EVAL ✓  ·  DEP DECISION: **RESOLVED (2026-06-12) — HAND-ROLL JSON-RPC over stdio; serde/serde_json only, no new runtime dep. Human-ratified.**  ·  M8.1 ✓DONE (149) · M8.2 ✓DONE (154) · M8.3 RED ✓ GREEN ✓ REVIEW ✓ DONE ✓ (162 tests green) · M8.4 RED ▢
+- **Status:** D15 EVAL ✓  ·  DEP DECISION: **RESOLVED (2026-06-12) — HAND-ROLL JSON-RPC over stdio; serde/serde_json only, no new runtime dep. Human-ratified.**  ·  M8.1 ✓DONE (149) · M8.2 ✓DONE (154) · M8.3 ✓DONE (162) · M8.4 RED ✓ GREEN ✓ REVIEW ✓ DONE ✓ (166 tests green) · **M8 COMPLETE 2026-06-12**
 - **Links:** docs/ROADMAP.md#m8--mcp_server (D8/D13/D14/D15) · docs/plans/M8-mcp-server.md · docs/project_plan.md §8, §10.2, §10.3 · project_overview.md §2.5
 
 ## Goal
@@ -827,3 +827,234 @@ benign.
 - Doc close-out per protocol step 6: flip M8.3 to DONE and update `src/mcp_server/CLAUDE.md`
   (still reads "M8.3–M8.4 pending") + `src/storage/CLAUDE.md` (add `symbols_for_path`) +
   `src/types/CLAUDE.md` (add `SymbolOutline`) + `docs/TODO.md` to "162 tests". Not a code block.
+
+---
+
+## M8.4 — D14 self-healing search · RED (test-lead, 2026-06-12)
+
+Four failing tests appended to `tests/mcp_tests.rs` (purely additive; existing 15 mcp + suite
+untouched). They drive self-healing over a REAL on-disk index: a new `test_server_on_disk(&[(rel,
+content)])` helper `init`+writes+`index`es a temp project (real §4.4 content+mtime hashes), then
+each test mutates the indexed file behind the index's back. `search_with_stats()` grabs the metric
+handle BEFORE moving the server into `serve`, then reads it after — so the `serve` signature stays
+unchanged. `cargo fmt --check` clean; `cargo test --test mcp_tests --no-run` fails on exactly two
+missing symbols (the RED).
+
+### Tests + exact failing reason
+- **`search_after_file_edit_returns_fresh_content`** (headline): index `auth.py` whose body calls
+  `legacy_password_check`; edit it on disk to call `argon2_verify`; search "authenticate user" →
+  asserts text contains `argon2_verify`, NOT `legacy_password_check`, and `files_reindexed == 1`.
+  FAILS: `handle_search` does one `Retriever::query` with no hash-check/re-index, so it returns the
+  STALE chunk; also no `staleness_handle()` (compile error).
+- **`search_on_unchanged_files_does_no_reindex_writes`**: index 2 files, edit nothing, search →
+  asserts `files_reindexed == 0` AND the stored `get_file_hash(auth.py)` is byte-identical
+  before/after. FAILS to compile (handle hook); once stubbed, would need the no-write guarantee.
+- **`search_result_file_deleted_on_disk_is_dropped_from_results`**: index `ghost.py`, delete it on
+  disk, search → asserts no JSON-RPC error, result text lacks `haunted_function`,
+  `files_dropped == 1`, AND a SECOND fresh server over the same DB also lacks it (eviction
+  persisted). FAILS: current handler returns the stale chunk and never evicts.
+- **`search_self_heal_is_bounded_to_result_files`**: index `alpha.py`+`beta.py`, edit BOTH, search
+  a term matching only alpha → asserts alpha healed (`new_alpha_value`), `files_checked == 1`,
+  `files_reindexed == 1`, and beta is still stale (`hasher::is_changed(beta, stored) == true`).
+  Pins the D14 cost bound (heal ∝ result count, overview §5.2).
+
+### Pinned staleness-metric hook (eng-lead must add)
+```rust
+// src/mcp_server/mod.rs (re-exported from the crate's mcp_server module)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StalenessStats {
+    pub files_checked: usize,    // distinct result files hash-checked this search
+    pub files_reindexed: usize,  // changed-on-disk files transparently re-indexed
+    pub files_dropped: usize,    // deleted-on-disk files evicted + dropped from results
+}
+pub struct StalenessHandle(/* e.g. Arc<Mutex<StalenessStats>> */);
+impl StalenessHandle { pub fn last(&self) -> StalenessStats; }
+impl CodeCacheServer {
+    pub fn staleness_handle(&self) -> StalenessHandle; // cheap clone of the shared cell
+}
+```
+`handle_search` writes the cell at the END of each search. A fresh server reads `Default` (zeros);
+non-search calls leave it unchanged. `serve(reader, writer, server)` signature is UNCHANGED — the
+handle is grabbed before the move.
+
+### No-write observable (test 2) — pinned both ways
+(a) metric `files_reindexed == 0`; (b) `Storage::get_file_hash(path)` byte-identical across the
+search. `files_checked` MAY be > 0 (the hash-check is the cheap read; only a WRITE is forbidden).
+
+### Required production surface (eng-lead, M8.4 GREEN)
+Self-healing `handle_search` algorithm: (1) `Retriever::query(query, opts)` once → collect DISTINCT
+result `file_path`s; (2) per file: `hasher::is_changed(path, Storage::get_file_hash(path))` —
+CHANGED & on disk ⇒ `Indexer::update_files(&[path])` (`files_reindexed += 1`); DELETED on disk
+(`compute_file_hash` errors / path gone) ⇒ `Storage::delete_chunks_for_file(path)` +
+`Storage::delete_file_meta(path)` (`files_dropped += 1`, NO panic); UNCHANGED ⇒ no write;
+`files_checked += 1` per implicated file; (3) re-run the query ONCE and format that fresh result with
+`formatter::format(.., Format::Text)`; (4) write `StalenessStats` to the shared cell. The
+`Indexer` for the re-index can be rooted anywhere (the stored paths are absolute-under-root, so
+`update_files(&[abs_path])` re-hashes/re-indexes straight from disk). Bounded to result files only —
+do NOT walk the whole index. No reachable `unwrap/expect/panic` (a deleted file's hash error is the
+DROP signal, not an error to propagate).
+
+## GREEN — engineering lead (M8.4 — D14 self-healing search)
+
+**Slice M8.4 GREEN (2026-06-12).** `codecache_search` now self-heals before answering, bounded to
+the files the first query surfaces. serde/serde_json/anyhow + the existing hasher/storage/indexer
+APIs only — no new deps, no rmcp, no tokio. All five gates green; 166 tests (was 162, +4).
+
+### Files changed
+- `src/mcp_server/mod.rs` — added `StalenessStats` + `StalenessHandle` + `CodeCacheServer::
+  staleness_handle()`; `CodeCacheServer` now holds an `Arc<Mutex<StalenessStats>>` (the shared cell
+  the handle reads). `serve(reader, writer, server)` signature UNCHANGED. The `tools/call` search arm
+  now passes `&self.staleness` to `handle_search`.
+- `src/mcp_server/handlers.rs` — `handle_search` rewritten to be self-healing (was a single
+  `Retriever::query`); added private helpers `run_query` + `distinct_files`. `handle_update` /
+  `handle_outline` / arg parsing untouched.
+- `tests/mcp_tests.rs` — doc-comment-ONLY reflow of the `test_server_on_disk` helper docstring
+  (lines ~1221-1225): the wrapped line previously began with `/// + index`, whose leading `+` markdown
+  parsed as a list bullet, tripping `clippy::doc_lazy_continuation` under `-D warnings`. Reworded the
+  prose ("init, write files, then index") so no line starts with a list marker. ZERO change to any
+  assertion, helper signature, value, or test logic — pure hygiene, mirroring the accepted M8.1
+  fmt-only fix to this same RED file. Flagged for manager/test-lead visibility.
+
+### New public API
+```rust
+// src/mcp_server/mod.rs (re-exported as codecache::mcp_server::{StalenessStats, StalenessHandle})
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StalenessStats {
+    pub files_checked: usize,    // distinct result files hash-checked this search
+    pub files_reindexed: usize,  // changed-on-disk files transparently re-indexed
+    pub files_dropped: usize,    // deleted-on-disk files evicted + dropped
+}
+#[derive(Clone)]
+pub struct StalenessHandle(/* Arc<Mutex<StalenessStats>> */);
+impl StalenessHandle { pub fn last(&self) -> StalenessStats; }
+impl CodeCacheServer { pub fn staleness_handle(&self) -> StalenessHandle; }
+```
+The handle is grabbed BEFORE the server is moved into `serve`; the server writes the cell at the end
+of each `handle_search`. A poisoned lock degrades to `Default`/no-op rather than panicking (the
+metric is observational, never load-bearing). A fresh server reads `Default` (all zero); a non-search
+tool call leaves the previous value untouched.
+
+### Self-healing `handle_search` algorithm (as built)
+1. Run the query ONCE (`run_query`) → `distinct_files` = the distinct result `file_path`s in stable
+   first-seen order. This is the bounded set the heal touches.
+2. For each implicated file, read `Storage::get_file_hash(path)`:
+   - `None` (no `files_metadata` row → not part of the staleness window, e.g. a directly-seeded
+     chunk never indexed from disk) → SKIP entirely (not checked, not re-indexed, not dropped).
+   - `Some(cached)` → `files_checked += 1`, then `hasher::is_changed(path, Some(cached))`:
+     - `Ok(true)` (changed, file readable) → `Indexer::update_files(&[path])` (rooted at `.`; stored
+       paths are absolute-under-root so it re-hashes/re-indexes straight from disk); `files_reindexed += 1`.
+     - `Ok(false)` (unchanged) → no write.
+     - `Err(_)` (file deleted/unreadable — `compute_file_hash` errored; the hash error IS the
+       deletion signal) → `Storage::delete_chunks_for_file(path)` + `Storage::delete_file_meta(path)`
+       (evict, persisted); `files_dropped += 1`. NOT propagated as a tool error, no panic.
+3. Re-run the query ONCE more and format THAT fresh `QueryResult` via `formatter::format(&fresh,
+   query, Format::Text)`.
+4. Write `StalenessStats { files_checked, files_reindexed, files_dropped }` into the shared cell.
+
+### KEY SUBTLETY — the `None`-hash guard (why M8.3 #12 didn't regress)
+The brief's contract calls `hasher::is_changed(path, get_file_hash(path).as_deref())` and annotates
+`Ok(true)` as "changed, file readable on disk". But `is_changed(path, None)` short-circuits to
+`Ok(true)` WITHOUT touching the filesystem (its never-indexed semantics). M8.3 test #12 seeds chunks
+directly via `Storage::insert_chunks`, which writes ONLY the FTS5 `symbols` table — NO
+`files_metadata` row — so `get_file_hash("src/auth.py")` is `None`. Without a guard, the `None →
+Ok(true)` path would call `update_files(&["src/auth.py"])`, which (file absent on disk) deletes the
+seeded chunk delete-first and re-indexes nothing → "Found 0 results", breaking #12. The fix: only
+files WITH a stored hash (`Some`) are in the staleness window — a `None`-hash result file is skipped
+(no check/reindex/drop). This is brief-aligned: the heal protects genuinely-indexed files (those with
+a §4.4 content+mtime hash). Every M8.4 test seeds via real `init`+`index`, so all its files have
+`Some` hashes and are checked normally.
+
+### How each of the 4 M8.4 tests passes
+- **#16 `search_after_file_edit_returns_fresh_content`** — auth.py indexed (body `legacy_password_check`),
+  then edited on disk to `argon2_verify`. First query surfaces auth.py; `Some` hash; `is_changed → Ok(true)`
+  → `update_files` re-indexes the edited body; re-run query returns the fresh chunk. Text contains
+  `argon2_verify`, NOT `legacy_password_check`; `stats.files_reindexed == 1`.
+- **#17 `search_on_unchanged_files_does_no_reindex_writes`** — auth.py/math.py indexed, unchanged.
+  Surfaced file has `Some` hash; `is_changed → Ok(false)` → no write. `stats.files_reindexed == 0`;
+  the probed `get_file_hash(auth.py)` is byte-identical before/after (no re-stamp). `files_checked`
+  may be ≥1 (the cheap read), no write.
+- **#18 `search_result_file_deleted_on_disk_is_dropped_from_results`** — ghost.py indexed, then
+  deleted on disk. First query surfaces it; `Some` hash; `is_changed → Err(_)` (compute_file_hash
+  can't read a missing file) → `delete_chunks_for_file` + `delete_file_meta` evict it; re-run query
+  returns nothing for that file. No JSON-RPC error, no panic; `stats.files_dropped == 1`. A second
+  fresh server over the same DB also returns nothing → eviction persisted, not just in-memory.
+- **#19 `search_self_heal_is_bounded_to_result_files`** — alpha.py + beta.py indexed, BOTH edited on
+  disk. Query matches only alpha → `distinct_files` = [alpha] only. alpha checked + re-indexed
+  (`new_alpha_value` returns); beta NEVER surfaced → never checked/re-indexed → stays stale (the test
+  re-confirms `is_changed(beta) == true` against its still-old stored hash). `stats.files_checked == 1`,
+  `files_reindexed == 1`. Pins the D14 bound: heal cost ∝ result count, not whole index.
+
+### Gates (all green)
+- `cargo test --test mcp_tests` → **19/19** (6 M8.1 + 5 M8.2 + 4 M8.3 + 4 M8.4).
+- `cargo test` (full suite) → **166 passed, 0 failed** (was 162; +4 M8.4).
+- `cargo clippy --all-targets -- -D warnings` → clean.
+- `cargo fmt --check` → clean (whole tree).
+- `cargo build` → clean.
+
+### Deviations / notes
+- One doc-comment-only edit to `tests/mcp_tests.rs` (the RED helper docstring) to satisfy
+  `clippy::doc_lazy_continuation` (leading `+` parsed as a markdown list bullet). No assertion or
+  test contract changed. Flagging per the "tests are the contract" rule.
+- The `None`-hash guard (above) is the only judgment call beyond the literal brief text; it is
+  brief-consistent (the brief's `Ok(true)` is annotated "file readable on disk", which a `None`-cached
+  missing file does not satisfy) and is required to keep M8.3 #12 green. Raised for manager visibility.
+
+## REVIEW — code reviewer (M8.4 — D14 self-healing search)
+
+**VERDICT: APPROVE.** (2026-06-12)
+
+### Gate results (all green)
+- `cargo fmt --check` → clean (no output).
+- `cargo clippy --all-targets -- -D warnings` → clean (no warnings).
+- `cargo test` (full suite) → **166 passed, 0 failed, 0 ignored** (was 162; +4 M8.4 = tests #16–#19).
+- `cargo build` → clean.
+
+### Self-healing correctness (D14) — CONFIRMED
+`handle_search` (src/mcp_server/handlers.rs:38) implements the §8.2/D14 contract exactly:
+(a) first `run_query` → `distinct_files` collects the DISTINCT result `file_path`s in stable
+first-seen order — the bounded set, NOT the whole index; (b) per implicated file: `get_file_hash`
+→ on `Ok(true)` (changed, readable) `Indexer::update_files(&[path])` (transparent re-index,
++files_reindexed); on hasher `Err(_)` (deleted/unreadable) `delete_chunks_for_file` +
+`delete_file_meta` (evict, +files_dropped) — a drop, never a propagated error, never a panic;
+on `Ok(false)` (unchanged) NO write; (c) a single `run_query` re-run over the now-fresh index,
+formatted via `formatter::format(.., Format::Text)`. The re-run uses a `Retriever` over the same
+shared `Storage` (D8), so it sees the re-indexed/evicted state. The clean path does ZERO writes
+(test #17 proves it two ways: `files_reindexed == 0` AND byte-identical stored hash). Bounded cost
+confirmed by test #19 (`files_checked == 1` for a two-file index where only one file is surfaced).
+The storage lock is acquired transiently per `storage.*` call and never held across an `Indexer`
+call, so there is no nested-lock/deadlock hazard.
+
+### The `None`-hash guard — SOUND, spec-consistent (not a BLOCK)
+handlers.rs:72 `let Some(cached) = cached else { continue; }` skips any result file with no stored
+§4.4 hash. This is correct per D14, which keys the heal off the STORED content+mtime hash (§4.4):
+a file with no `files_metadata` row has no on-disk source-of-truth to compare against and was never
+disk-indexed, so it is neither checked, re-indexed, nor evicted. Verified it does NOT let a genuinely
+stale real file slip through: every disk-indexed file gets a `Some` hash via `update_file_hash`
+(UPSERT_FILE_META), so a real stale file always reaches the `is_changed` check. Verified it is
+load-bearing: without it, M8.3 test #12 (`call_codecache_search_returns_formatted_results`, seeded
+via `insert_chunks` only — no metadata row → `get_file_hash == None`) would regress, because
+`is_changed(path, None) → Ok(true)` would invoke `update_files` on a path with no on-disk source,
+evicting the seeded chunk. The guard is the right boundary.
+
+### No reachable panic/unwrap/expect — CONFIRMED
+No `unwrap`/`expect`/`panic!` in the new production code. Storage/index/hasher errors map to
+`-32603` via explicit `map_err`. The staleness write (mod.rs:60-62, handlers.rs:109) degrades
+gracefully on a poisoned lock (`.lock().map(..).unwrap_or_default()` / `if let Ok(mut cell)`),
+the only lock touched in the new path. No other lock is unwrapped. A deleted file is a drop, not
+an error.
+
+### No new deps / idiomatic — CONFIRMED
+serde/serde_json only; no Cargo.toml change. `distinct_files`, `run_query`, the `options` closure,
+and `std::slice::from_ref(path)` are idiomatic; borrowing over cloning on the hot path.
+
+### Test-file deviation — CONFIRMED doc-comment-only, NO assertion weakened
+`git diff HEAD -- tests/mcp_tests.rs` is PURELY ADDITIVE: the M8.4 block is appended at line 1151+
+with zero modified or deleted pre-existing lines. The `clippy::doc_lazy_continuation` reflow the
+eng-lead noted lives inside the freshly-authored M8.4 `///` docstrings (a line beginning `+` parsed
+as a markdown bullet), not in any M8.3 test body. No assertion, expected value, or test logic in
+tests #1–#15 changed. Tests #16–#19 assert meaningful, spec-pinned behavior (fresh body returned,
+stale token absent, exact `files_reindexed`/`files_dropped`/`files_checked` counts, persisted
+eviction across a fresh server, bounded heal proven by beta staying stale). Not weakened — strong.
+
+### Findings
+None (no blockers, no majors, no minors). M8.4 is DONE pending manager integration.

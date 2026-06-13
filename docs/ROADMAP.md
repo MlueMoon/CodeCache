@@ -57,15 +57,20 @@ A milestone is *done* only when its exit criteria are met under the Definition o
   tests green, all four gates clean (Rust 1.85). Added D18 (additive `Config::save`) for `config`
   read/write; `serve` is a clean M8 stub. Reviewer APPROVED all four slices (0 findings).
 
-### M8 — `mcp_server`
+### M8 — `mcp_server`  · **DONE 2026-06-12** (M8.1 08fc6c7 · M8.2 7021b78 · M8.3 66ec107 · M8.4 commit pending)
 - **Entry** ✓ **RESOLVED (D15, 2026-06-12)**: hand-roll JSON-RPC 2.0 over stdio for v0.1
   (`serde`/`serde_json` only — no new runtime deps); `rmcp` re-evaluated at v0.2 behind the D4
   transport seam. Human-ratified; eval in `.claude/briefs/BRIEF-M8-mcp-server.md`.
-- **Work**: stdio MCP adapter; tool registration (`codecache_search`, `codecache_update`,
-  `codecache_outline` — D13); **self-healing search** (hash-check + transparent re-index of
-  result files at query time — D14); `serve` command.
-- **Exit**: protocol handshake + tool-call round-trip tested against a mock client; all three
-  tools registered; a query against a stale file returns fresh content (D14 test).
+- **Work** ✓: stdio MCP adapter (line-delimited JSON-RPC 2.0, `initialize` handshake, -32700/-32601/
+  -32602/-32603 error mapping); tool registration (`codecache_search`, `codecache_update`,
+  `codecache_outline` — D13) with exact §8.2 schemas; `tools/call` round-trip; **self-healing search**
+  (hash-check + transparent re-index/evict of result files at query time — D14, `StalenessStats`
+  metric hook); `serve` command (stdio wired; SSE → clean "unsupported in v0.1", D4 seam). New
+  additive `Storage::symbols_for_path` (D19) backs the outline tool.
+- **Exit** ✓: protocol handshake + all three tool round-trips tested against an in-memory mock client;
+  all three tools registered with §8.2 schemas; a query against a stale file returns fresh content
+  (D14). 19 `mcp_tests` + 3 D19 `storage_tests` + 1 `e2e_cli` serve test; **166 tests green**, all four
+  gates clean (Rust 1.85). Reviewer APPROVED all four slices.
 
 ### M9 — TypeScript + Go parsers
 - **Work**: add `tree-sitter-typescript` and `tree-sitter-go` configs + queries.
