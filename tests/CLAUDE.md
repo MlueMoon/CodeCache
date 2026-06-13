@@ -13,6 +13,7 @@ directory holds the wider integration/E2E/property surface.
 |---|---|---|
 | `smoke_test.rs` | M0 smoke test: crate links; `codecache::VERSION == CARGO_PKG_VERSION`. | M0 |
 | `parser_tests.rs` | M3 parser integration: exact byte spans, method/decorator/nested, ERROR-rate (D2). | M3 |
+| `parser_ts_tests.rs` | M9.1 TypeScript parser: function/arrow/class/method exact spans, generics, type-only no-panic, D2 parity. | M9 |
 | `chunker_tests.rs` | M4 chunker integration: AST→Chunk, D3 enrichment, D2 heuristic fallback flag. | M4 |
 | `chunker_proptest.rs` | M4 property: spans in-bounds; chunks disjoint-or-nested; child contained in parent. | M4 |
 | `storage_tests.rs` | M1 storage integration: schema idempotency, chunk round-trip CRUD, BM25/MATCH ordering, empty-DB/error paths. + M8.3 D19 `symbols_for_path` (exact-file / directory-prefix / unknown-path ordering). | M1/M8 |
@@ -42,6 +43,22 @@ Minimal, purpose-built Python files loaded by `parser_tests.rs`. Span assertions
 | `malformed.py` | one good fn + a broken `def broken(:` → some ERROR nodes (positive rate). | LF |
 | `high_error.py` | mostly garbage → ERROR-rate above `HEURISTIC_FALLBACK_THRESHOLD`. | LF |
 | `enriched_module.py` | module docstring + `import os`/`from typing import List` + `UserService.register` calling free fn `hash_password` (D3 enrichment: docstring/imports/cross_references). | LF |
+
+### `fixtures/typescript/` (M9.1 parser)
+Minimal, purpose-built TypeScript files loaded by `parser_ts_tests.rs`. Span assertions compare
+`&source[start_byte..end_byte]` to the expected text, so the exact bytes (incl. newlines) matter
+— do not reformat these. All LF (the TS grammar exercises no CRLF-specific path here — CRLF is
+already covered language-agnostically in `crlf_function.py`).
+
+| File | Purpose | Newlines |
+|---|---|---|
+| `top_level_function.ts` | single top-level `function foo(name: string): string`. | LF |
+| `arrow_function.ts` | `const bar = (x: number) => {...}` (variable_declarator + arrow_function). | LF |
+| `class_with_method.ts` | `class Foo { greet(...) {...} }` (class + method_definition; parent=`Foo`). | LF |
+| `generics.ts` | `function identity<T>(x: T): T` (type params must not break the span). | LF |
+| `type_only.ts` | `interface Shape` + `type Pair<T>` + generic fn `makePair` + class `Circle` (interfaces/aliases NOT emitted as chunks; no panic; real fn/class found). | LF |
+| `high_error.ts` | mostly garbage → ERROR-rate above `HEURISTIC_FALLBACK_THRESHOLD` (D2 parity). | LF |
+| `async_function.ts` | `async function fetchData(...)` (async keyword inside span). | LF |
 
 Integration tests for storage round-trips (M1), parser fixtures (M3), chunker non-overlap
 property (M4), indexer idempotency (M5), retriever ranking/budget (M6), formatter goldens +

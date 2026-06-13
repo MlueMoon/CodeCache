@@ -233,8 +233,14 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       (mcp_tests 19/19); reviewer APPROVED (0 findings); 166 tests green, all four gates clean.
 
 ## Phase 9 — TypeScript + Go (M9) · plan: [plans/M9-typescript-go.md](plans/M9-typescript-go.md)
-- [ ] RED tests: per-language fixtures → test-lead
-- [ ] TS + Go parser configs/queries → engineering-lead + specialist
+- [x] **M9.1 TypeScript** — `src/parser/typescript.rs` + `queries/typescript.scm` wired through a
+      per-language `recognize_definition` dispatch; function/arrow/class/method exact-span extraction
+      (§5.3), D2 parity, D7 lines. 7 `parser_ts_tests` (incl. generics + type-only no-panic); no
+      Python regression; **173 tests green**, all four gates clean (Rust 1.85). Reviewer APPROVED.
+      Decisions: `LANGUAGE_TYPESCRIPT` grammar (`.tsx`/JSX deferred); interfaces/type-aliases not
+      emitted as chunks; no enum change. Follow-up: TS destructuring-declarator guard (parser CLAUDE.md).
+- [ ] M9.2 Go — `src/parser/go.rs` + `queries/go.scm`: funcs, methods w/ receiver, struct → `Struct`.
+- [ ] M9.3 cross-language integration: mixed repo indexes Python/TS/Go; language filter respected.
 
 ## Phase 10 — Benchmarks + Release (M10) · plan: [plans/M10-benchmarks-release.md](plans/M10-benchmarks-release.md)
 - [ ] Full criterion suite vs systems budgets (p95<500ms, index<100MB, incr<2s, cold-index, hash) → perf

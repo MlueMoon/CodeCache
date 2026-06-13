@@ -34,6 +34,7 @@ use tree_sitter::{Node, Query, Tree};
 use crate::types::{Chunk, Language, SymbolType};
 
 mod python;
+mod typescript;
 
 /// [`error_rate`] value at or above which a file should be routed to the M4 heuristic chunker
 /// instead of trusting the AST (Decision Log D2). ~20% of named nodes broken.
@@ -129,6 +130,10 @@ impl Parser {
         Query::new(&py.grammar, py.queries)?;
         language_configs.insert(Language::Python, py);
 
+        let ts = typescript::config();
+        Query::new(&ts.grammar, ts.queries)?;
+        language_configs.insert(Language::TypeScript, ts);
+
         Ok(Self {
             ts_parser: tree_sitter::Parser::new(),
             language_configs,
@@ -171,11 +176,13 @@ impl Parser {
     }
 }
 
-/// Recursively walk `node`, emitting a [`Chunk`] for each `function_definition` / `class_definition`.
+/// Recursively walk `node`, emitting a [`Chunk`] for each definition the active `lang` recognizes,
+/// dispatching per language to the right node kinds and span/parent rules.
 ///
-/// `parent` is the name of the nearest enclosing *definition* (class or function), used both for
-/// `parent_symbol` and to decide Method vs Function. Decorated defs are spanned from their
-/// `decorated_definition` wrapper so the `@decorator` lines are included.
+/// `parent` is the name of the nearest enclosing *definition* (class/struct or function), used both
+/// for `parent_symbol` and to decide Method vs Function. The shared helpers (`build_chunk`,
+/// `extend_to_line_end`, `field_text`, `node_text`) are reused across languages; only the node-kind
+/// recognition and the span/parent decisions vary, so each language gets a small `recognize` step.
 fn collect_chunks(
     node: Node,
     source: &str,
@@ -184,68 +191,128 @@ fn collect_chunks(
     parent: Option<&str>,
     out: &mut Vec<Chunk>,
 ) {
-    // Iterate children; recurse with an updated `parent` when we enter a definition.
     let mut walk = node.walk();
     let children: Vec<Node> = node.children(&mut walk).collect();
     for child in children {
-        match child.kind() {
-            "function_definition" => {
-                if let Some(name) = field_text(child, "name", source) {
-                    let symbol_type = if parent_is_class(child) {
-                        SymbolType::Method
-                    } else {
-                        SymbolType::Function
-                    };
-                    // Span source: the decorated wrapper if present, else the def itself.
-                    let span_node = span_node_for(child);
-                    if let Some(chunk) = build_chunk(
-                        span_node,
-                        name,
-                        symbol_type,
-                        lang,
-                        file_path,
-                        parent,
-                        source,
-                    ) {
-                        out.push(chunk);
-                    }
-                    // Recurse into the body; this def's name becomes the children's parent.
-                    collect_chunks(child, source, lang, file_path, Some(name), out);
-                } else {
-                    collect_chunks(child, source, lang, file_path, parent, out);
+        // A language-specific recognizer decides whether this child is a definition we emit, and
+        // if so, which node to span, what symbol type it is, and the name to carry to its children.
+        match recognize_definition(child, lang, source) {
+            Some(def) => {
+                if let Some(chunk) = build_chunk(
+                    def.span_node,
+                    def.name,
+                    def.symbol_type,
+                    lang,
+                    file_path,
+                    parent,
+                    source,
+                ) {
+                    out.push(chunk);
                 }
+                // Recurse into the def; its name becomes the children's enclosing parent.
+                collect_chunks(child, source, lang, file_path, Some(def.name), out);
             }
-            "class_definition" => {
-                if let Some(name) = field_text(child, "name", source) {
-                    let span_node = span_node_for(child);
-                    if let Some(chunk) = build_chunk(
-                        span_node,
-                        name,
-                        SymbolType::Class,
-                        lang,
-                        file_path,
-                        parent,
-                        source,
-                    ) {
-                        out.push(chunk);
-                    }
-                    collect_chunks(child, source, lang, file_path, Some(name), out);
-                } else {
-                    collect_chunks(child, source, lang, file_path, parent, out);
-                }
-            }
-            // Any other node (module, decorated_definition wrapper, blocks, statements, ERROR …):
-            // recurse without changing the parent context so nested defs are still found.
-            _ => {
-                collect_chunks(child, source, lang, file_path, parent, out);
-            }
+            // Not a definition (module, wrapper, block, statement, ERROR …): recurse unchanged so
+            // nested defs are still found.
+            None => collect_chunks(child, source, lang, file_path, parent, out),
         }
     }
 }
 
-/// The node whose byte span the chunk should use: the enclosing `decorated_definition` (so the
-/// `@decorator` lines are included) when present, otherwise the definition node itself.
-fn span_node_for(def: Node) -> Node {
+/// A recognized definition: the node whose byte span the chunk uses, the symbol name, and its type.
+struct Definition<'a> {
+    span_node: Node<'a>,
+    name: &'a str,
+    symbol_type: SymbolType,
+}
+
+/// Decide whether `node` is a definition the given `lang` emits as a [`Chunk`]. Returns the span
+/// node, name, and symbol type, or `None` for any other node kind.
+fn recognize_definition<'a>(
+    node: Node<'a>,
+    lang: Language,
+    source: &'a str,
+) -> Option<Definition<'a>> {
+    match lang {
+        Language::Python => recognize_python(node, source),
+        Language::TypeScript => recognize_typescript(node, source),
+        // Go lands at M9.2; no other language is wired yet.
+        Language::Go => None,
+    }
+}
+
+/// Python: `function_definition` (Method when nearest def ancestor is a class) and
+/// `class_definition`. Decorated defs are spanned from their `decorated_definition` wrapper so the
+/// `@decorator` lines are inside the span.
+fn recognize_python<'a>(node: Node<'a>, source: &'a str) -> Option<Definition<'a>> {
+    match node.kind() {
+        "function_definition" => {
+            let name = field_text(node, "name", source)?;
+            let symbol_type = if python_parent_is_class(node) {
+                SymbolType::Method
+            } else {
+                SymbolType::Function
+            };
+            Some(Definition {
+                span_node: python_span_node_for(node),
+                name,
+                symbol_type,
+            })
+        }
+        "class_definition" => Some(Definition {
+            span_node: python_span_node_for(node),
+            name: field_text(node, "name", source)?,
+            symbol_type: SymbolType::Class,
+        }),
+        _ => None,
+    }
+}
+
+/// TypeScript (§5.3): `function_declaration` → Function; an arrow fn assigned to a
+/// `variable_declarator` → Function named by the declarator identifier, spanned by the declarator
+/// (so it excludes the `const ` keyword and the trailing `;`); `class_declaration` → Class;
+/// `method_definition` inside a `class_declaration` → Method. Interfaces/type-aliases are not
+/// emitted in v0.1. The span node is the node itself in all cases (TS has no decorator wrapper here).
+fn recognize_typescript<'a>(node: Node<'a>, source: &'a str) -> Option<Definition<'a>> {
+    match node.kind() {
+        "function_declaration" => Some(Definition {
+            span_node: node,
+            name: field_text(node, "name", source)?,
+            symbol_type: SymbolType::Function,
+        }),
+        // Only declarators whose value is an arrow function are emitted (named by the identifier).
+        "variable_declarator"
+            if node
+                .child_by_field_name("value")
+                .is_some_and(|v| v.kind() == "arrow_function") =>
+        {
+            Some(Definition {
+                span_node: node,
+                name: field_text(node, "name", source)?,
+                symbol_type: SymbolType::Function,
+            })
+        }
+        "class_declaration" => Some(Definition {
+            span_node: node,
+            name: field_text(node, "name", source)?,
+            symbol_type: SymbolType::Class,
+        }),
+        "method_definition" => Some(Definition {
+            span_node: node,
+            name: field_text(node, "name", source)?,
+            symbol_type: if ts_parent_is_class(node) {
+                SymbolType::Method
+            } else {
+                SymbolType::Function
+            },
+        }),
+        _ => None,
+    }
+}
+
+/// The Python span node: the enclosing `decorated_definition` (so `@decorator` lines are included)
+/// when present, otherwise the definition node itself.
+fn python_span_node_for(def: Node) -> Node {
     match def.parent() {
         Some(p) if p.kind() == "decorated_definition" => p,
         _ => def,
@@ -253,14 +320,28 @@ fn span_node_for(def: Node) -> Node {
 }
 
 /// True if `def`'s nearest enclosing *definition* is a `class_definition` (⇒ Method), as opposed
-/// to a `function_definition` (⇒ nested Function) or module level. We climb past structural nodes
-/// (`block`, `decorated_definition`, ERROR, …) and stop at the first definition ancestor.
-fn parent_is_class(def: Node) -> bool {
+/// to a `function_definition` (⇒ nested Function) or module level. Climbs past structural nodes
+/// (`block`, `decorated_definition`, ERROR, …) and stops at the first definition ancestor.
+fn python_parent_is_class(def: Node) -> bool {
     let mut cur = def.parent();
     while let Some(node) = cur {
         match node.kind() {
             "class_definition" => return true,
             "function_definition" => return false,
+            _ => cur = node.parent(),
+        }
+    }
+    false
+}
+
+/// True if `method`'s nearest enclosing *definition* is a `class_declaration` (⇒ Method). Climbs
+/// past structural nodes (`class_body`, statements, ERROR, …) and stops at the first definition.
+fn ts_parent_is_class(method: Node) -> bool {
+    let mut cur = method.parent();
+    while let Some(node) = cur {
+        match node.kind() {
+            "class_declaration" => return true,
+            "function_declaration" | "arrow_function" | "method_definition" => return false,
             _ => cur = node.parent(),
         }
     }
