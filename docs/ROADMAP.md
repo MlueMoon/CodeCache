@@ -57,7 +57,7 @@ A milestone is *done* only when its exit criteria are met under the Definition o
   tests green, all four gates clean (Rust 1.85). Added D18 (additive `Config::save`) for `config`
   read/write; `serve` is a clean M8 stub. Reviewer APPROVED all four slices (0 findings).
 
-### M8 — `mcp_server`  · **DONE 2026-06-12** (M8.1 08fc6c7 · M8.2 7021b78 · M8.3 66ec107 · M8.4 commit pending)
+### M8 — `mcp_server`  · **DONE 2026-06-12** (M8.1 08fc6c7 · M8.2 7021b78 · M8.3 66ec107 · M8.4 42f6575)
 - **Entry** ✓ **RESOLVED (D15, 2026-06-12)**: hand-roll JSON-RPC 2.0 over stdio for v0.1
   (`serde`/`serde_json` only — no new runtime deps); `rmcp` re-evaluated at v0.2 behind the D4
   transport seam. Human-ratified; eval in `.claude/briefs/BRIEF-M8-mcp-server.md`.

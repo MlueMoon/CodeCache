@@ -202,7 +202,7 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       nonzero with stderr + no panic. Verification-only (M7.3 handlers already GREEN); reviewer
       APPROVED (0 findings). ROADMAP M7 exit criteria met end-to-end.
 
-## Phase 8 — mcp_server (M8) · plan: [plans/M8-mcp-server.md](plans/M8-mcp-server.md) · brief: [.claude/briefs/BRIEF-M8-mcp-server.md](../.claude/briefs/BRIEF-M8-mcp-server.md) · **DONE 2026-06-12** (M8.0 D15 · M8.1 08fc6c7 · M8.2 7021b78 · M8.3 66ec107 · M8.4 <pending-commit>)
+## Phase 8 — mcp_server (M8) · plan: [plans/M8-mcp-server.md](plans/M8-mcp-server.md) · brief: [.claude/briefs/BRIEF-M8-mcp-server.md](../.claude/briefs/BRIEF-M8-mcp-server.md) · **DONE 2026-06-12** (M8.0 D15 · M8.1 08fc6c7 · M8.2 7021b78 · M8.3 66ec107 · M8.4 42f6575)
 - [x] **Entry (D15) RESOLVED 2026-06-12**: human-ratified **hand-roll JSON-RPC over stdio** for v0.1
       (serde/serde_json only, no new runtime dep; `rmcp` re-evaluated at v0.2 behind the D4 seam).
       ROADMAP D15 flipped to RESOLVED; project_plan §10.2 updated; §10.3 confirmed needs no new dep.
