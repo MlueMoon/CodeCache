@@ -289,11 +289,21 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       timings (cold-index incl. the 10K miss, query latency, incremental) are tracked-not-asserted.
       `ci.yml` confirmed UNCHANGED + still mirrors local hooks (fmt --check / clippy --all-targets -D
       warnings / test --all). `.github/CLAUDE.md` updated. Reviewer APPROVE (no findings).
-- [ ] **M10.4 release v0.1.0 — STAGED, human-gated**: author `release.yml`; confirm `Cargo.toml`
-      0.1.0 + crates.io metadata (fix placeholder `repository` URL); CHANGELOG / README quickstart /
-      `CLAUDE_CODE_SETUP.md` / `CONTRIBUTING.md` / `LICENSE`; LOCAL DRY RUN (`cargo publish
-      --dry-run`, `cargo package`, build binary, init→index→query). **Tag/publish/remote-push NOT
-      executed — staged awaiting human go-ahead.** → devops-release + manager
+- [x] **M10.4 release v0.1.0 — STAGED + dry-run-verified (NOT published)** → devops + manager.
+      **STAGED 2026-06-12.** Authored: `.github/workflows/release.yml` (on `v*` tag only — cannot
+      auto-fire; 3-OS smoke test → publish gated on `CARGO_REGISTRY_TOKEN` → binary upload),
+      `LICENSE-MIT` + `LICENSE-APACHE` (verbatim standard texts, © 2026 EunHo Lee), `CHANGELOG.md`
+      (0.1.0 + honest Known Issues: D20 cold-10K, D1 semantic gap, D21 micro-suite), `CONTRIBUTING.md`,
+      `docs/CLAUDE_CODE_SETUP.md` (§8.4 MCP config + 3 tools). Finalized `README.md` (status M0–M9,
+      196 tests; MIT OR Apache-2.0). **Dry run (all PASS):** `cargo package` (175 files, 2.2 MiB),
+      `cargo publish --dry-run` exit 0, release binary smoke test init→index→query exit 0. Reviewer
+      APPROVE (after fixing a corrupted LICENSE-APACHE + a stale doc command).
+      - **⛔ HUMAN-GATED — NOT executed (awaiting go-ahead):** no `v0.1.0` tag, no real `cargo
+        publish`, no remote push. **Human must, before release:** (1) resolve the crates.io name
+        conflict — `codecache` already exists on crates.io (rename crate, or confirm ownership);
+        (2) set the real `repository` URL in `Cargo.toml` (currently placeholder
+        `github.com/EunHo-Lee/codecache`); (3) set the `CARGO_REGISTRY_TOKEN` repo secret; (4) push
+        the `v0.1.0` tag to trigger `release.yml`.
 
 ## Research track (R1–R4, post-M8; M9 can interleave) · spec: [`../project_overview.md`](../project_overview.md) §5–§6 · ROADMAP "Research track"
 - [ ] **R1 harness**: agent loop with pluggable retrieval tools; trajectory logging; ContextBench

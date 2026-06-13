@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "Local-first, AST-driven code-context retrieval engine for terminal AI workflows"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/your-org/codecache"
+# PLACEHOLDER — human must verify/correct this URL before `cargo publish`.
+# crates.io permanently records `repository` per version; wrong URL requires a yank + re-publish.
+# Best-guess canonical URL below; correct it to the real remote before pushing the v0.1.0 tag.
+repository = "https://github.com/EunHo-Lee/codecache"
 readme = "README.md"
 keywords = ["ast", "tree-sitter", "retrieval", "code-search", "mcp"]
 categories = ["command-line-utilities", "development-tools"]

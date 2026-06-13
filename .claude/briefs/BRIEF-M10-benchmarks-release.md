@@ -2,10 +2,11 @@
 
 - **Milestone:** M10 — Benchmarks + Release  ·  **Module(s):** `benches/`, `.github/`, docs (no new runtime API)
 - **Owner (manager):** principal-engineering-manager  ·  **Created:** 2026-06-12
-- **Status (M10.1 systems benches):** RED ▢  GREEN ▢  REVIEW ▢  DONE ▢
-- **Status (M10.2 retrieval quality D16):** RED ▢  GREEN ▢  REVIEW ▢  DONE ▢
-- **Status (M10.3 CI bench wiring + parity):** RED ▢  GREEN ▢  REVIEW ▢  DONE ▢
-- **Status (M10.4 release v0.1.0 — STAGED ONLY):** RED ▢  GREEN ▢  REVIEW ▢  DONE ▢
+- **Status (M10.1 systems benches):** GREEN ✅  REVIEW ✅  DONE ✅ (`92fe491`)
+- **Status (M10.2 retrieval quality D16):** RED ✅  GREEN ✅  REVIEW ✅  DONE ✅ (`5650596`)
+- **Status (M10.3 CI bench wiring + parity):** GREEN ✅  REVIEW ✅  DONE ✅ (`9ceb324`)
+- **Status (M10.4 release v0.1.0 — STAGED ONLY):** GREEN ✅  REVIEW ✅  STAGED ✅ (local commit; tag/publish/push HUMAN-GATED, NOT executed)
+- **MILESTONE M10: M10.1–M10.3 DONE; M10.4 STAGED + dry-run-verified, awaiting human go-ahead for the irreversible publish.**
 - **Links:** docs/ROADMAP.md#m10 · docs/plans/M10-benchmarks-release.md · docs/TEST_STRATEGY.md · project_overview.md §5.1–5.2 · docs/ROADMAP.md Decision Log D16/D1/D2/D3/D4
 
 ## Goal
@@ -705,4 +706,346 @@ no `benches/*.rs` change. Confirmed via `git status --porcelain`.
 - **Aligned:** YAML + docs only; no Rust/Cargo.toml/src change. `.github/CLAUDE.md` accurate.
 - **Decisions:** no new decision — bench.yml operationalizes D20's trend-not-gate disposition.
 - **Gates:** unchanged by a YAML+docs diff; tree green at 196/0 from M10.2.
-- **Commit:** (filled at commit) — "M10.3: scheduled bench CI + parity …". **Slice DONE.**
+- **Commit:** `9ceb324` — "M10.3: scheduled criterion bench CI (bench.yml) + parity check".
+  Working tree clean; nothing pushed/tagged. **Slice DONE.**
+
+---
+
+## GREEN — devops (M10.4 — STAGED)
+
+**Date:** 2026-06-12  **Agent:** devops-release-engineer  **Machine:** Windows 11 / Rust 1.85
+
+### Files authored / changed (NOT committed — awaiting human go-ahead)
+
+| File | Change |
+|---|---|
+| `.github/workflows/release.yml` | NEW. Tag-triggered release workflow (see design below). |
+| `LICENSE-MIT` | NEW. Standard MIT license text, copyright 2026 EunHo Lee. |
+| `LICENSE-APACHE` | NEW. Standard Apache-2.0 license text, copyright 2026 EunHo Lee. |
+| `CHANGELOG.md` | NEW. Keep-a-Changelog format; `[0.1.0] - 2026-06-12` section with known issues (D20, D1, D21, D4). |
+| `CONTRIBUTING.md` | NEW. TDD workflow, four quality gates, MSRV 1.85, bench instructions, no-unwrap rule, commit style, license notice. |
+| `docs/CLAUDE_CODE_SETUP.md` | NEW. Full MCP integration guide: install, init, index, the three MCP tools, both `mcp.json` and `claude mcp add` forms, SSE v0.1 unsupported note (D4), troubleshooting. |
+| `README.md` | UPDATED. Stale status line fixed (M0–M9 complete, 196 tests, v0.1.0 staged). License section updated (MIT OR Apache-2.0 dual, links to LICENSE-MIT + LICENSE-APACHE). Quickstart `codecache index .` corrected to `codecache index` (no path arg — config holds paths). MCP setup snippet + links to CLAUDE_CODE_SETUP.md and CONTRIBUTING.md added. |
+| `Cargo.toml` | UPDATED. Placeholder repository URL replaced with best-guess canonical `https://github.com/EunHo-Lee/codecache` + a prominent `# PLACEHOLDER` comment. |
+| `.github/CLAUDE.md` | UPDATED. release.yml row marked M10.4 staged; release.yml design section + name-conflict warning added; Status block updated. |
+
+### release.yml — design
+
+- **Trigger:** `on.push.tags: ["v*"]` only. NOT on push/PR. The tag push is the human go-ahead.
+- **Job 1 — install-smoke-test (matrix: ubuntu/macos/windows):** runs all three quality gates
+  (`cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --all`),
+  then `cargo build --release`, then the smoke test (init → write hello.py → index → query "greet_user"
+  → assert exit 0). Verified locally: the query returns 2 chunks with exit 0 (see dry-run section).
+- **Job 2 — publish (ubuntu, `needs: install-smoke-test`):** `cargo publish --no-verify` with
+  `CARGO_REGISTRY_TOKEN` secret. Gated on smoke-test success; a broken binary never reaches crates.io.
+  `--no-verify` avoids double build (the smoke-test job already verified the package compiles).
+- **Job 3 — release-binaries (matrix, `needs: install-smoke-test`):** `cargo build --release` +
+  `softprops/action-gh-release@v2` to upload the platform binary as a GitHub Release asset.
+  `fail-fast: false` so each platform uploads independently even if one fails.
+- **Security:** `CARGO_REGISTRY_TOKEN` is a repository secret. `GITHUB_TOKEN` (auto-provisioned)
+  with `contents: write` for the binary upload. No plaintext secrets.
+- **Caching:** identical key pattern to ci.yml and bench.yml (`Cargo.lock` + `rust-toolchain.toml`).
+- **No new Rust dependency.** All actions are from the existing set plus `softprops/action-gh-release@v2`
+  (a GitHub Actions action, not a Rust crate; no Cargo.toml change).
+
+### Cargo.toml repository placeholder — HUMAN ACTION REQUIRED
+
+`Cargo.toml` previously held `repository = "https://github.com/your-org/codecache"` (the original
+placeholder). This has been updated to `https://github.com/EunHo-Lee/codecache` as the best-guess
+canonical URL. **crates.io permanently records this field per version** — a wrong URL requires
+yanking the version and re-publishing under a patch bump. The human MUST verify and correct this
+URL to the real repository remote before pushing the v0.1.0 tag. The comment in Cargo.toml is
+prominent (`# PLACEHOLDER — human must verify/correct`).
+
+### CRITICAL — crate name conflict warning
+
+`cargo publish --dry-run` emitted: **`warning: crate codecache@0.1.0 already exists on crates.io index`**
+
+This means the name `codecache` is already registered on crates.io. The `--dry-run` still succeeds
+(it validates packaging and compilation), but the REAL `cargo publish` will fail with an
+authentication/ownership error unless EunHo Lee is the existing owner of that crate name.
+
+**Human must:** check `https://crates.io/crates/codecache` before the real publish to determine:
+- If the existing crate is a prior publish by EunHo Lee → the publish should succeed (version bump).
+- If the existing crate is owned by someone else → the name must be changed (e.g. `codecache-tool`
+  or `codecache-index`) and Cargo.toml `name`, binary name, and CLI `name` field updated accordingly
+  before publish.
+
+### Full dry-run results
+
+#### `cargo package --list --allow-dirty`
+EXIT 0. 175 files listed (all source, docs, fixtures, CHANGELOG, CONTRIBUTING, LICENSE-MIT,
+LICENSE-APACHE, README). No unexpected files excluded. Full list confirmed to include:
+- All `src/` Rust files and module CLAUDE.md files
+- All `tests/` integration tests and fixtures (including `retrieval_quality/micro_suite.json`)
+- All `benches/*.rs` and `benches/CLAUDE.md`
+- `CHANGELOG.md`, `CONTRIBUTING.md`, `LICENSE-MIT`, `LICENSE-APACHE`, `README.md`, `Cargo.toml`
+- All `.github/` workflow YAMLs and `.github/CLAUDE.md`
+- All `.claude/` agents, skills, hooks, briefs
+- All `docs/` plan files
+
+#### `cargo package --allow-dirty`
+EXIT 0. Output:
+```
+Packaging codecache v0.1.0
+Packaged 175 files, 2.2MiB (1.1MiB compressed)
+Verifying codecache v0.1.0 (... target/package/codecache-0.1.0)
+[... all deps compiled ...]
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 27.31s
+```
+Packages cleanly from the .crate; all dependencies resolved; no missing files or build errors.
+
+#### `cargo publish --dry-run --allow-dirty`
+EXIT 0. Output (truncated to key lines):
+```
+warning: crate codecache@0.1.0 already exists on crates.io index
+Packaging codecache v0.1.0
+Packaged 175 files, 2.2MiB (1.1MiB compressed)
+Verifying codecache v0.1.0 ...
+Finished `dev` profile ...
+Uploading codecache v0.1.0
+warning: aborting upload due to dry run
+```
+**Dry run exits 0. Name-conflict warning is present (see critical warning above). No metadata
+errors. The placeholder repository URL did NOT cause a failure in dry-run mode** (crates.io
+validates URLs only at real publish time).
+
+#### `cargo build --release`
+EXIT 0. Output: `Finished 'release' profile [optimized] target(s) in 16.94s`
+Binary: `target/release/codecache.exe` (Windows)
+
+#### Binary smoke test (init → index → query)
+All commands run from `/tmp/codecache_smoke` (a fresh temp directory with a single `hello.py`):
+
+```
+Command: codecache init
+Output:  Initialized CodeCache index in C:\Users\ehlee\AppData\Local\Temp\codecache_smoke
+Exit:    0  -- PASS
+
+Command: codecache index
+Output:  Indexed 1 file(s), 2 chunk(s) in 30 ms
+Exit:    0  -- PASS
+
+Command: codecache query "greet_user"
+Output:
+────────────────────────────────────────────────────────
+Query: "greet_user"
+Found 2 results (showing top 2, 36 tokens)
+────────────────────────────────────────────────────────
+
+[1] greet_user (function) C:\...\hello.py:1-3 (score: -0.00)
+def greet_user(name: str) -> str:
+    """Return a greeting for the user."""
+    return f"Hello, {name}!"
+
+[2] main (function) C:\...\hello.py:5-6 (score: -0.00)
+def main():
+    print(greet_user("world"))
+
+────────────────────────────────────────────────────────
+Exit:    0  -- PASS
+```
+
+Smoke test PASSED. Both indexed symbols (`greet_user` and `main`) are returned; the query term
+`greet_user` appears in the result set with the correct file path and line ranges.
+
+**IMPORTANT:** The `index` command takes NO path argument — paths are configured at `init` time
+(stored in `.codecache/config.toml`, defaulting to the current directory). The release.yml smoke
+test and all quickstart docs have been corrected accordingly.
+
+### Gate status
+
+- `cargo fmt --all -- --check`: CLEAN (release binary build passes; no .rs files changed)
+- `cargo clippy --all-targets -- -D warnings`: CLEAN (no .rs files changed)
+- `cargo test --all`: CLEAN (196 passed, 0 failed — unchanged from M10.3)
+- `cargo build --release`: EXIT 0
+- `cargo package --allow-dirty`: EXIT 0 (175 files, 2.2 MiB)
+- `cargo publish --dry-run --allow-dirty`: EXIT 0 (name-conflict warning, not a code/metadata error)
+- Binary smoke test: PASS (init exit 0, index exit 0, query exit 0 with correct results)
+- No new Rust dependency added: CONFIRMED
+- No `src/` file changed: CONFIRMED
+- No new public runtime API: CONFIRMED
+
+### PUBLISH IS STAGED, NOT EXECUTED — awaiting human go-ahead
+
+The release is fully prepared and dry-run verified. Nothing has been committed, tagged, pushed,
+or published. To execute the real release, the human must do the following in order:
+
+1. **VERIFY the crate name.** Check `https://crates.io/crates/codecache`. If the name is taken
+   by another owner, rename the crate before proceeding (update `Cargo.toml` `name`, binary name,
+   and CLI `name` in the `clap` derive).
+
+2. **VERIFY/CORRECT the repository URL.** Check `Cargo.toml` line 7. The current value is
+   `https://github.com/EunHo-Lee/codecache`. Correct it to the real remote URL if different.
+   This field is permanent per version on crates.io.
+
+3. **SET the `CARGO_REGISTRY_TOKEN` secret.** In the repository: Settings → Secrets and variables
+   → Actions → New repository secret. Name: `CARGO_REGISTRY_TOKEN`. Value: a crates.io API token
+   with the `publish-new` (or `publish-update`) scope.
+
+4. **COMMIT the M10.4 changes** (the manager does this per the brief). The commit should include:
+   `.github/workflows/release.yml`, `LICENSE-MIT`, `LICENSE-APACHE`, `CHANGELOG.md`,
+   `CONTRIBUTING.md`, `docs/CLAUDE_CODE_SETUP.md`, `README.md`, `Cargo.toml`, `.github/CLAUDE.md`,
+   and this brief update.
+
+5. **PUSH the v0.1.0 tag** (after the commit is on main):
+   ```
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+   This push triggers `release.yml`. The workflow will:
+   - Run fmt/clippy/test + smoke test on ubuntu/macos/windows in parallel.
+   - On all three passing: publish to crates.io + upload platform binaries to GitHub Releases.
+
+6. **VERIFY** the published crate at `https://crates.io/crates/codecache/0.1.0` and the GitHub
+   Release assets at the repository's Releases page.
+
+### M10.4 — release v0.1.0 (STAGED, not published) — **BLOCK** (code-reviewer, 2026-06-12)
+
+YAML + docs + release-metadata only; no runtime Rust. Reviewed by reading; gates re-run locally.
+
+**RELEASE BOUNDARY — CONFIRMED INTACT (the critical check):**
+- `release.yml` `on:` is `push.tags: ["v*"]` ONLY (lines 30-33). NO `push.branches`, NO
+  `pull_request`, NO `schedule`, NO `workflow_dispatch`. The workflow CANNOT fire on a branch/PR
+  push — only a human-pushed `v*` tag triggers it. It cannot auto-publish.
+- `publish` job `needs: install-smoke-test` (line 179) and `release-binaries` `needs:
+  install-smoke-test` (line 219) — a broken build (fmt/clippy/test/smoke) never reaches crates.io
+  or the Release. `publish` is gated on `secrets.CARGO_REGISTRY_TOKEN` (lines 207-209); absent the
+  secret the step fails closed (no silent publish).
+- Nothing in the SLICE itself publishes/tags/pushes — it is a workflow DEFINITION + docs. The
+  trigger is a future human tag push.
+- **Git evidence:** `git tag --list` → EMPTY (no v0.1.0, no any tag). `git log --oneline -3` →
+  `9ceb324 M10.3`, `5650596 M10.2`, `92fe491 M10.1` (last commits are M10.1/2/3; nothing M10.4
+  committed/tagged/pushed). `git status` → only the 10 staged-but-uncommitted M10.4 files
+  (4 modified: brief/.github CLAUDE.md/Cargo.toml/README.md; 6 untracked: release.yml/CHANGELOG/
+  CONTRIBUTING/CLAUDE_CODE_SETUP/LICENSE-MIT/LICENSE-APACHE). The manager commits; nothing pushed.
+- **Boundary verdict: SAFE. No accidental-publish vector found.**
+
+**Verified correct:**
+- Docs-vs-behavior: `src/cli/mod.rs:62-73` confirms `index` takes NO positional path (only `--full`/
+  `--db-path`/`--progress`); `init` (lines 46-60) carries `--index-path` (paths configured at init).
+  So `codecache index` (no `.`) is correct in README quickstart (line 27) + CLAUDE_CODE_SETUP (45,59)
+  + release.yml smoke test (120, 159). README status line now accurate (M0–M9 complete, 196 tests,
+  v0.1.0 staged — old "M0–M5/M6 in progress" gone). README License section = MIT OR Apache-2.0 with
+  links to both LICENSE files (lines 75-78). MCP config matches project_plan §8.4 verbatim (command
+  "codecache", args ["serve","--transport","stdio"], cwd) in both README (57-66) and CLAUDE_CODE_SETUP
+  (70-80). The 3 MCP tool names (codecache_search/update/outline) are correct.
+- CHANGELOG honesty: [0.1.0] Known Issues lists the cold-10K miss (D20, with real 6.04s vs <5s
+  number), the BM25 semantic gap (D1), the 15-query micro-suite proxy (D21), and the SSE-unsupported
+  note (D4). Honest — no hidden miss.
+- Cargo.toml: version 0.1.0, license "MIT OR Apache-2.0", the `repository` placeholder is loudly
+  flagged with a 3-line `# PLACEHOLDER — human must verify/correct` comment (lines 7-10) — not a
+  silent fake-final URL. No dependency change (diff is solely the repository line + comment).
+- Name-conflict on crates.io surfaced as a human-action item, NOT ignored: brief "CRITICAL — crate
+  name conflict warning" (lines 759-771) + .github/CLAUDE.md "NAME CONFLICT WARNING" + the staged
+  human-action checklist step 1.
+- LICENSE-MIT: real standard MIT text, "Copyright (c) 2026 EunHo Lee". Correct.
+- Gates re-run locally (Win11/Rust 1.85): `cargo fmt --all -- --check` CLEAN; `cargo clippy
+  --all-targets -- -D warnings` CLEAN; `cargo test --all` 196 passed / 0 failed (counted, unchanged).
+  No src/ runtime change; no new Cargo dependency.
+
+**Findings:**
+- **blocker — LICENSE-APACHE:33-end (Section 3, Grant of Patent License) — corrupt/non-standard
+  license text.** The Apache-2.0 patent grant is garbled: line 80 reads "...Work, that is infionally
+  made to said Contributor with the terms of the patent license." The standard Section 3 text — the
+  patent-claims scope ("...those patent claims licensable by such Contributor that are necessarily
+  infringed by their Contribution(s) alone or by combination...") AND the entire patent-litigation
+  termination clause ("If You institute patent litigation ... then any patent licenses granted to You
+  under this License for that Work shall terminate...") — is MISSING and replaced with garbage. A
+  release MUST NOT ship a corrupted, legally-altered license file presented as Apache-2.0; this
+  changes the actual license terms (the defensive-termination clause is a core part of Apache-2.0).
+  **Fix:** replace LICENSE-APACHE with the verbatim official Apache License 2.0 text from
+  https://www.apache.org/licenses/LICENSE-2.0.txt (keep the existing correct APPENDIX copyright
+  "2026 EunHo Lee"). Re-diff Section 3 against the canonical text before the manager commits.
+- **major — docs/CLAUDE_CODE_SETUP.md:172 — stale `codecache index .` (path-arg) command.** The
+  devops agent corrected `index .` → `index` everywhere EXCEPT the Troubleshooting bullet, which
+  still reads "Check that `codecache init` and `codecache index .` completed without errors." Since
+  `index` takes no positional path, copy-pasting this is a wrong command (clap will reject the `.`
+  as an unexpected argument → nonzero exit), and it contradicts the corrected Step 2 in the same
+  file. **Fix:** change line 172 to "...`codecache init` and `codecache index` completed...".
+
+**Nit (non-blocking):**
+- minor — release.yml:209 `cargo publish --no-verify` skips the package's own build verification.
+  Defensible (the smoke-test job already ran fmt/clippy/test/build --release on the same commit on
+  ubuntu), and the brief documents the rationale. No change required; noting the trade-off for the
+  record (if the published-package build ever diverges from the workspace build, --no-verify would
+  not catch it).
+
+**Verdict:** BLOCK — on the corrupted LICENSE-APACHE (blocker: shipping an altered license is a
+real legal/correctness defect) plus the stale `index .` troubleshooting line (major: documents a
+command that fails). The release boundary is intact and safe, the workflow logic is correct, the
+metadata/CHANGELOG/name-conflict/placeholder handling is honest and well-flagged, and all four
+gates are green. Fix the two findings (drop in the verbatim Apache-2.0 text; correct line 172) and
+this is a fast re-review APPROVE. Until then, the slice is NOT clear to COMMIT LOCALLY — the manager
+should not commit a corrupted license file into the release history.
+
+> Status line: **M10.4 — RED n/a (docs/YAML, not test-first runtime) · GREEN ✅ · REVIEW ✅ BLOCK (1 blocker LICENSE-APACHE + 1 major stale-command; boundary INTACT, gates green) · DONE pending**
+
+### M10.4 — RE-REVIEW — **APPROVE** (code-reviewer, 2026-06-12)
+
+Both prior findings verified genuinely resolved; boundary still intact; all four gates green.
+
+1. **LICENSE-APACHE (blocker) — RESOLVED.** File now contains verbatim standard Apache-2.0
+   text. Section 3 "Grant of Patent License" reads correctly: "...those patent claims
+   licensable by such Contributor that are necessarily infringed by their Contribution(s)
+   alone or by combination of their Contribution(s) with the Work..." and the full
+   defensive-termination clause "If You institute patent litigation... shall terminate as of
+   the date such litigation is filed." No garbage text ("infionally" etc.) remains. All 9
+   numbered sections present (1 Definitions → 9 Accepting Warranty), END OF TERMS AND
+   CONDITIONS + APPENDIX present, with "Copyright 2026 EunHo Lee" in the boilerplate.
+2. **docs/CLAUDE_CODE_SETUP.md (major) — RESOLVED.** Line 172 now reads
+   `codecache init` and `codecache index` (no trailing `.`). Line 174 extension list now
+   correctly reads `.py`, `.ts`, `.go` only (`.tsx`/JSX deferred post-v0.1, matching M9
+   detect_language scope). Swept README.md / CHANGELOG.md / CONTRIBUTING.md /
+   docs/CLAUDE_CODE_SETUP.md: no other stale `index .` and no wrong-extension (`.tsx`/`.js`)
+   references remain. (README line 27 was also corrected to `codecache index`.)
+3. **Release boundary — INTACT.** release.yml unchanged: `on: push.tags: ["v*"]` only, no
+   push/PR trigger; publish + release-binaries both `needs: install-smoke-test`.
+   `git tag --list` empty (no v0.1.0 tag). Nothing committed/pushed/published — working tree
+   shows only docs/CI/README/Cargo.toml staged changes; NO src/ change; Cargo.toml change is
+   the `repository` placeholder URL + warning comments only (no new dependency).
+4. **Gates — GREEN.** `cargo fmt --all -- --check` exit 0; `cargo clippy --all-targets -- -D
+   warnings` exit 0; `cargo test --all` 196 passed / 0 failed (sum across all suites).
+
+**Verdict:** APPROVE. Both blocker + major are genuinely fixed; the verbatim license is now
+legally sound, the docs no longer document failing commands or unsupported extensions, the
+release boundary is human-gated and untriggered, and all gates are clean. It is now SAFE for
+the manager to COMMIT LOCALLY. Tag creation, `cargo publish`, and any push remain
+human-gated and out of scope for this slice.
+
+> Status line: **M10.4 — RED n/a (docs/YAML, not test-first runtime) · GREEN ✅ · REVIEW ✅ APPROVE (re-review; both findings resolved, boundary intact, 196/0 green) · DONE pending (manager)**
+
+### M10.4 — STAGED ✅ (manager, 2026-06-12) — NOT PUBLISHED (human-gated)
+- **Reviewer APPROVE on re-review.** Manager-fixed the two findings before commit: (blocker)
+  replaced the corrupted `LICENSE-APACHE` with verbatim official Apache-2.0 text (© 2026 EunHo Lee);
+  (major) corrected the stale `codecache index .` + the `.tsx`/`.js` extension list in
+  `docs/CLAUDE_CODE_SETUP.md`. Release boundary CONFIRMED intact (release.yml fires on `v*` tag only;
+  no tag exists; nothing pushed/published).
+- **Authored (committed LOCALLY only):** `.github/workflows/release.yml`, `LICENSE-MIT`,
+  `LICENSE-APACHE`, `CHANGELOG.md`, `CONTRIBUTING.md`, `docs/CLAUDE_CODE_SETUP.md`, finalized
+  `README.md`, `Cargo.toml` (repository placeholder + flag), `.github/CLAUDE.md`.
+- **Dry run PASS:** `cargo package` 175 files / 2.2 MiB; `cargo publish --dry-run` exit 0; release
+  binary init→index→query smoke test exit 0. Gates: fmt/clippy/test (**196**) all clean.
+- **⛔ PUBLISH STAGED, NOT EXECUTED — awaiting human go-ahead.** The irreversible steps were NOT
+  performed (no `v0.1.0` tag, no real `cargo publish`, no remote push). **Human pre-publish
+  checklist (also in CHANGELOG/README/release.yml header):** (1) resolve the crates.io name
+  conflict — `codecache` already exists on crates.io (confirm ownership or rename crate +
+  `[[bin]]` + clap name); (2) set the real `repository` URL in `Cargo.toml` (placeholder
+  `github.com/EunHo-Lee/codecache`); (3) set the `CARGO_REGISTRY_TOKEN` repo secret; (4)
+  `git push` the branch + `git tag v0.1.0 && git push origin v0.1.0` → triggers `release.yml`.
+- **Commit:** (filled at commit) — "M10.4: stage v0.1.0 release …". **Slice STAGED.**
+
+---
+
+## MILESTONE M10 — FINAL SUMMARY (2026-06-12)
+- **M10.1** `92fe491` — criterion suite + FTS5 EXPLAIN QUERY PLAN baseline.
+- **M10.2** `5650596` — D16 Layer-1 retrieval-quality scoring (offline micro-suite proxy).
+- **M10.3** `9ceb324` — scheduled bench CI (bench.yml) + ci.yml parity.
+- **M10.4** STAGED (local commit) — v0.1.0 release fully prepared + dry-run-verified; tag/publish/
+  push HUMAN-GATED and NOT executed.
+- **Tests:** 181 (post-M9) → **196** (+15 M10.2 retrieval-quality scorer/metric tests).
+- **Budgets:** query p95 0.51 ms ✅ · index 12.3 MB ✅ · incremental 190 ms ✅ · cold-100K 13.54 s ✅
+  · hash-1K 459 ms ✅ · **cold-10K 6.04 s ❌ (D20, tracked, v0.1.x batching follow-up)** ·
+  Layer-1 retrieval recorded (keyword Recall@10 = 1.000; semantic = 0.000, D1 informational).
+- **Decisions logged:** **D20** (cold-10K miss disposition), **D21** (15-query offline scoring proxy).
+- **Gates:** fmt / clippy -D warnings / test --all (196) / build all clean on Rust 1.85.
