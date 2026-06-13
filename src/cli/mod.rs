@@ -210,7 +210,11 @@ fn dispatch(cli: Cli) -> Result<()> {
             value,
             db_path,
         } => config::run(key.as_deref(), value.as_deref(), &db_path),
-        Command::Serve { .. } => serve::run(),
+        Command::Serve {
+            transport,
+            port: _,
+            db_path,
+        } => serve::run(transport, &db_path),
     }
 }
 

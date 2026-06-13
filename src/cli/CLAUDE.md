@@ -56,9 +56,16 @@ Handlers are thin adapters returning `anyhow::Result<()>` (Err → nonzero exit;
 - `config` (**D18**) → no args prints the resolved config as TOML; `config <KEY> <VALUE>` sets a
   documented dotted scalar key (≥ `storage.max_db_size_mb`) and persists via `Config::save`; unknown
   key / bad value → nonzero error.
-- `serve` → clean M8 stub (non-crashing notice).
+- `serve` (**M8.1**) → resolves the db path, opens `Storage`, builds
+  `mcp_server::CodeCacheServer::new(storage)`, and runs `mcp_server::serve(stdin().lock(),
+  stdout().lock(), server)` for `--transport stdio`. `--transport sse` → clean
+  `anyhow` "unsupported in v0.1 (stdio only)" error → nonzero exit (D4 seam; pinned by
+  `e2e_serve_unsupported_transport_sse_errors_cleanly`). `dispatch` threads `transport`/`db_path`
+  through; `--port` parses but is inert until the v0.2 SSE adapter (no test pins port behavior).
 
 ## Status
 M7.2 DONE (2026-06-12): clap parsing + error/exit-code mapping; reviewer APPROVED.
 M7.3 DONE (2026-06-12): command handlers + `status` aggregates + `config` read/write (D18) shipped +
 green (cli_tests 11/11); reviewer APPROVED (0 findings). Binary E2E → M7.4.
+M8.1 DONE (2026-06-12): `serve` stub replaced — stdio wires the hand-rolled `mcp_server`; SSE returns a
+clean unsupported error (D4 seam); reviewer APPROVED; all four gates green.

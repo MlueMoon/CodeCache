@@ -1633,7 +1633,7 @@ Claude Code (to user):
 | **Hashing**   | xxHash3-128 (`xxhash-rust`) | 10× faster than SHA-256, sufficient collision resistance                                |
 | **CLI**       | `clap` v4                   | Derive-based API, auto-generated help, robust arg parsing                               |
 | **JSON**      | `serde_json`                | De-facto Rust JSON library                                                              |
-| **MCP**       | Official Rust SDK (`rmcp`) **to evaluate at M8 entry** (D15) | An official MCP Rust SDK now exists (modelcontextprotocol org); evaluate API stability and pin a version, else fall back to hand-rolled JSON-RPC over stdio |
+| **MCP**       | Hand-rolled JSON-RPC 2.0 over stdio (`serde`/`serde_json` only) — **ratified, D15 (2026-06-12)** | v0.1 hand-rolls the stdio MCP adapter: zero new runtime deps, no tokio/async over the synchronous SQLite core (D8), and no MSRV conflict with the deliberate 1.85.0 pin (D10). The official `rmcp` SDK was evaluated and deferred to v0.2 (SSE/HTTP transports, D4) — see ROADMAP D15. The `mcp_server` module stays behind the D4 transport-agnostic seam so `rmcp` can be swapped in later as an adapter change. |
 
 ### 10.3 Key Dependencies (Rust `Cargo.toml`)
 
@@ -1661,7 +1661,8 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # Hashing
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 
-# Serialization
+# Serialization. `serde` + `serde_json` also back the M8 hand-rolled MCP JSON-RPC adapter
+# (D15, 2026-06-12) — no new runtime dep is needed for the stdio MCP server.
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"

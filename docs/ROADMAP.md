@@ -58,8 +58,9 @@ A milestone is *done* only when its exit criteria are met under the Definition o
   read/write; `serve` is a clean M8 stub. Reviewer APPROVED all four slices (0 findings).
 
 ### M8 — `mcp_server`
-- **Entry**: evaluate the official MCP Rust SDK (`rmcp`) vs hand-rolled JSON-RPC; pin a version
-  either way (D15).
+- **Entry** ✓ **RESOLVED (D15, 2026-06-12)**: hand-roll JSON-RPC 2.0 over stdio for v0.1
+  (`serde`/`serde_json` only — no new runtime deps); `rmcp` re-evaluated at v0.2 behind the D4
+  transport seam. Human-ratified; eval in `.claude/briefs/BRIEF-M8-mcp-server.md`.
 - **Work**: stdio MCP adapter; tool registration (`codecache_search`, `codecache_update`,
   `codecache_outline` — D13); **self-healing search** (hash-check + transparent re-index of
   result files at query time — D14); `serve` command.
@@ -250,11 +251,27 @@ mid-flight and its scope is frozen) — the retriever keeps results carrying `fi
 server can hash-check without new retriever API. Spec §8.2 updated. Adds the *staleness window*
 metric (overview §5.2 Layer 3).
 
-### D15 — Evaluate official MCP Rust SDK `rmcp` (Δ3)  · **Adopted** (plan: M8 entry) — *overview §2.5*
-Spec §10.2's "Custom (no SDK yet)" assumption is stale: an official MCP Rust SDK (`rmcp`,
-modelcontextprotocol org) now exists. At M8 entry, spike it for API stability; adopt and pin a
-version if sound, else keep the hand-rolled JSON-RPC plan. New dep needs manager sign-off per
-engineering standards. Spec §10.2 updated.
+### D15 — Evaluate official MCP Rust SDK `rmcp` (Δ3)  · **RESOLVED 2026-06-12: hand-roll JSON-RPC over stdio for v0.1; do NOT adopt `rmcp`** (plan: M8) — *overview §2.5; eval: `.claude/briefs/BRIEF-M8-mcp-server.md`*
+Spec §10.2's "Custom (no SDK yet)" assumption was stale: an official MCP Rust SDK (`rmcp`,
+modelcontextprotocol org) now exists. The M8-entry evaluation is complete and the **human has
+ratified the disposition: hand-roll JSON-RPC 2.0 over stdio for v0.1 using only `serde`/`serde_json`
+(already in the tree — zero new runtime deps).** Decisive reasons, in priority order:
+1. **MSRV conflict with the deliberate 1.85.0 pin (D10).** `rmcp` declares no `rust-version`, is
+   developed on a 1.92 toolchain, documents a 1.90 minimum, and uses `edition = "2024"` (1.85 is the
+   absolute floor, unverified). Adopting it breaks the 1.85 contract or forces pin-chasing — exactly
+   the whack-a-mole D10 rejected.
+2. **Zero-dependency identity (D12 / §10.3).** `rmcp` drags in tokio + schemars + async-trait +
+   proc-macro trees (~dozens of crates) onto the *one* optional surface; CodeCache's durable wedge is
+   "zero-dependency, deterministic, single static binary, air-gapped."
+3. **Async-over-sync friction (D8).** `rmcp` forces a tokio runtime onto a synchronous SQLite core;
+   correct use needs `spawn_blocking` bridging. Hand-roll has zero async/sync boundary.
+4. **Modest, frozen scope.** stdio + 3 tools + handshake is ~250–450 LOC over `serde_json` we already
+   ship — well within our TDD discipline and cheaper to own than to bridge.
+
+**Re-evaluate `rmcp` at v0.2**, when SSE/HTTP transports (D4) and richer protocol features make the
+SDK's breadth pay for itself and an MSRV bump can be a deliberate choice. `mcp_server` stays behind
+the **D4 transport-agnostic seam** so swapping in `rmcp` later is an adapter change, not a refactor.
+New dep needs manager sign-off per engineering standards — none required here. Spec §10.2 updated.
 
 ### D16 — Benchmark-suite evaluation replaces "5 real tasks" (Δ4)  · **Adopted** (plan: M10 + research track) — *overview §4–§5*
 The "≥40% token reduction on 5 tasks" criterion convinces nobody (claude-context markets the

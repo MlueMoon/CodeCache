@@ -202,14 +202,23 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       nonzero with stderr + no panic. Verification-only (M7.3 handlers already GREEN); reviewer
       APPROVED (0 findings). ROADMAP M7 exit criteria met end-to-end.
 
-## Phase 8 — mcp_server (M8) · plan: [plans/M8-mcp-server.md](plans/M8-mcp-server.md)
-- [ ] **Entry (D15)**: spike official MCP Rust SDK `rmcp` vs hand-rolled JSON-RPC; manager
-      signs off the dep + pins a version (record outcome in ROADMAP) → engineering-lead + manager
-- [ ] RED tests: JSON-RPC handshake + tool round-trip vs mock → test-lead
-- [ ] `mcp_server` (stdio) + `serve` → engineering-lead
-- [ ] **D13 `codecache_outline` tool** (symbol skeleton from the index; spec §8.2 Tool 3) →
-      test-lead → engineering-lead
-- [ ] **D14 self-healing search**: `codecache_search` hash-checks result files + transparently
+## Phase 8 — mcp_server (M8) · plan: [plans/M8-mcp-server.md](plans/M8-mcp-server.md) · brief: [.claude/briefs/BRIEF-M8-mcp-server.md](../.claude/briefs/BRIEF-M8-mcp-server.md)
+- [x] **Entry (D15) RESOLVED 2026-06-12**: human-ratified **hand-roll JSON-RPC over stdio** for v0.1
+      (serde/serde_json only, no new runtime dep; `rmcp` re-evaluated at v0.2 behind the D4 seam).
+      ROADMAP D15 flipped to RESOLVED; project_plan §10.2 updated; §10.3 confirmed needs no new dep.
+- [x] **M8.1 — JSON-RPC framing + `initialize` handshake + cross-cutting** *(DONE 2026-06-12)*:
+      line-delimited JSON-RPC 2.0 over a generic `serve<R: BufRead, W: Write>(reader, writer,
+      CodeCacheServer)` loop; `initialize` → server capabilities (protocolVersion `2024-11-05`);
+      `-32700`/`-32601`/`-32602` error mapping, no reachable panic; `serve` stub replaced (stdio wired,
+      `--transport sse` → clean "unsupported in v0.1" error, D4 seam); D8 `Storage` lent via clone.
+      6 `tests/mcp_tests.rs` + 1 `e2e_cli` test; reviewer APPROVED (1 hygiene blocker cleared). 149 tests
+      green, all four gates clean (Rust 1.85).
+- [ ] **M8.2 — tools/list**: all three tools (`codecache_search`/`codecache_update`/`codecache_outline`)
+      with exact §8.2 inputSchema (D13) → test-lead → engineering-lead
+- [ ] **M8.3 — tools/call round-trip**: search→Retriever, update→Indexer stats, **D13
+      `codecache_outline`** (symbol skeleton from the index, zero source reads — D7); bad args → -32602
+      → test-lead → engineering-lead
+- [ ] **M8.4 — D14 self-healing search**: `codecache_search` hash-checks result files + transparently
       re-indexes changed ones; RED test = stale-file query returns fresh content → test-lead →
       engineering-lead
 

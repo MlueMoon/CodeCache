@@ -243,3 +243,44 @@ fn e2e_index_is_incremental_on_rerun() {
         .success()
         .stdout(contains("hash_password"));
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// 6. (M8.1 cross-cutting) serve --transport sse is cleanly UNSUPPORTED in v0.1.
+//    v0.1 ships stdio JSON-RPC only; SSE/HTTP are the deferred D4 adapter seam.
+//    Invoking `serve --transport sse` must NOT silently succeed and must NOT
+//    panic — it returns a clean "unsupported in v0.1" error and exits NONZERO.
+//    Tested at the binary level (assert_cmd, precedent D17 / this file) because
+//    that is where the exit-code + stderr contract lives; it is the lightest
+//    place to pin "transport is parsed but rejected" end-to-end.
+//
+//    NOTE for eng-lead: `--transport sse` is currently the M7 serve STUB, which
+//    prints a notice and exits 0. M8.1 GREEN must replace that so a non-stdio
+//    transport (sse, or any future non-stdio value) errors cleanly + nonzero.
+//    The stdio path is NOT asserted here (it would block on stdin); the
+//    framing/handshake behavior of the stdio path is covered by mcp_tests.rs
+//    against the in-memory `serve(reader, writer, server)` seam.
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn e2e_serve_unsupported_transport_sse_errors_cleanly() {
+    let tmp = temp_project();
+    let root = tmp.path();
+
+    // An initialized project so the failure is specifically about the transport, not a missing db.
+    cc_in(root).arg("init").assert().success();
+
+    cc_in(root)
+        .args(["serve", "--transport", "sse"])
+        .assert()
+        .failure()
+        // A clean, user-facing message — not a Rust panic / segfault.
+        .stderr(predicate::str::is_empty().not())
+        .stderr(contains("panicked").not())
+        .stdout(contains("panicked").not())
+        // The message must name the v0.1 limitation (case-insensitive "unsupported").
+        .stderr(
+            contains("unsupported")
+                .or(contains("Unsupported"))
+                .or(contains("not supported")),
+        );
+}
