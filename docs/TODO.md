@@ -319,9 +319,13 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
             the built binary) + A0/A1/A4 + task defs (`arms.py`, `tasks/auth_q1.json`). **32 pytest tests
             green**; end-to-end vs the real binary: gold `authenticate_user` retrieved at rank 1
             (Recall@1 file+block = 1.0).
-      - [ ] Vendor mini-SWE-agent (pin 2.4.1); runner builds mini's loop with the tool-enabled env per arm.
+      - [x] Vendor mini-SWE-agent 2.4.1 — installed in a SHORT-path venv `C:\ccr1` (Windows long-path +
+            cp1252-emoji blockers, see brief); API mapped (DefaultAgent loop / DeterministicModel /
+            LocalEnvironment / `step_limit` termination).
+      - [ ] `runner.py`: per-arm DefaultAgent (tool prompt for A1, top-k inject for A4) + per-turn
+            surfaced-items capture → JSONL logger.
       - [ ] End-to-end wiring validated offline via mini's DeterministicModel (3 logs + metrics report).
-      - [ ] (gated) live-model run — needs a model-backend decision (free/local vs a paid key).
+      - [ ] (gated) live-model run — needs a model-backend decision (free/local vs a paid key; ~cents, not $1K).
 - [ ] **R2 offline ablations**: Layer-1 sweeps (chunking × ranking × enrichment) on
       ContextBench-Lite + RepoEval slice; reproduce published BM25 baselines → perf + specialist
 - [ ] **R3 agent-in-loop study**: full A0–A5 matrix on 30–50 tasks → promote winners to 100;

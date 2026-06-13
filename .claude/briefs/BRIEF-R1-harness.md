@@ -218,3 +218,55 @@ mini-SWE-agent + benchmarks on 2026-06-12). Recommendation: **fork mini-SWE-agen
 MCP surface and the M10.2 scorer protocol. Data finding **updates D21**: ContextBench gold contexts now appear
 **offline-downloadable (Apache-2.0)**. No code/deps/Cargo.toml touched. Task #18 marked completed. Awaiting
 human ratification of PROPOSED D22 before any build.
+
+---
+
+## R1 BUILD LOG (main session driving; D22 ratified 2026-06-13)
+
+**Status: offline core DONE + verified; agent runner NEXT (gated parts below).**
+
+### Done & committed
+- `docs/ROADMAP.md` D22 → **Adopted** (human-ratified 2026-06-13); `docs/TODO.md` R1 expanded.
+- **Offline core** under `research/r1_harness/` (commit `cc020e2`): `scorer.py` (verbatim port of the
+  M10.2 protocol in `tests/retrieval_quality.rs`), `trajectory.py` (JSONL turn schema + Layer-2
+  tokens/turns-to-coverage), `corpus.py` (materialise a micro-suite corpus to a real on-disk repo),
+  `codecache_tool.py` (shells to the built binary, parses §6.4.2 JSON, relativises paths to gold),
+  `arms.py` (A0/A1/A4 + Task), `tasks/auth_q1.json`. **32 pytest tests green**; end-to-end vs the
+  **real binary** retrieves gold `authenticate_user` at rank 1 (Recall@1 file+block = 1.0).
+- `research/CLAUDE.md` + `research/r1_harness/README.md` written.
+
+### Environment gotchas (Windows) — needed to install mini-SWE-agent
+- **Long-path blocker:** `pip install mini-swe-agent` fails under the repo's nested path because
+  litellm ships a >260-char file path (Windows MAX_PATH). **Fix: install the venv at a SHORT root.**
+  The working venv is at **`C:\ccr1`** (NOT under the repo; gitignored anyway). `requirements.txt`
+  pins `mini-swe-agent==2.4.1` + `pytest`.
+- **cp1252 emoji blocker:** mini's `__init__.py` prints a 👋 banner; the Windows console (cp1252)
+  can't encode it → `UnicodeEncodeError`. **Fix: set `PYTHONUTF8=1`** for any process importing
+  minisweagent (the runner must set it).
+- Interpreter: **`C:\ccr1\Scripts\python.exe`**. Verified `import minisweagent` → 2.4.1.
+
+### mini-SWE-agent 2.4.1 API (verified by inspection — for the runner)
+- `DefaultAgent(model, env, **AgentConfig)`. `AgentConfig` fields: `system_template`,
+  `instance_template`, `step_limit`, `cost_limit`, `wall_time_limit_seconds`,
+  `max_consecutive_format_errors`, `output_path`.
+- `agent.run(task)` seeds system+instance messages (Jinja2 templates), loops `step()` until the last
+  message `role == "exit"`; returns `messages[-1]["extra"]`. `step()` = `execute_actions(query())`.
+- `query()` → `model.query(messages)` returns a message dict with `extra.actions` (list) + `extra.cost`.
+- `execute_actions` runs `env.execute(action)` per action, then appends observation messages.
+- **`DeterministicModel(outputs=[...])`** (`models.test_models`): `query()` returns the next scripted
+  output dict in sequence — bypasses action-regex parsing (we supply `extra.actions` directly). No API.
+- `LocalEnvironment(cwd=..., env=..., timeout=...)`; `execute(action: dict, cwd="", *, timeout=None)`.
+- **Clean offline termination:** provide K scripted outputs and set `step_limit=K` → after K calls,
+  `query()` raises `LimitsExceeded`, which appends an `exit` message and ends the loop (no need to
+  reverse-engineer the submit sentinel for the plumbing test).
+
+### NEXT (runner.py)
+1. Build `runner.py`: per-arm `DefaultAgent` (system/instance templates carry the arm `prompt_addendum`;
+   A1 documents `codecache query`; A4 injects top-k from the index into the instance template, no loop
+   tool). Wrap `env.execute`/observations to capture per-turn surfaced files/blocks → my JSONL logger.
+2. Offline validate A0/A1/A4 with `DeterministicModel` (scripted realistic actions) → 3 trajectory logs
+   + a metrics report (Layer-1 Recall/Precision/F1 file+block; Layer-2 tokens/turns-to-coverage). NO API.
+3. **GATED — live-model run:** needs a model-backend decision (free/local via litellm, or a paid key).
+   The ~$1K R3 spend stays a separate downstream gate; a single-task R1 live run is ~cents, not $1K.
+4. Open measurement-design item: the observation→surfaced-items extractor for A0 (grep/cat) at
+   **block** granularity (file granularity is unambiguous) — A1 is clean (JSON gives blocks).
