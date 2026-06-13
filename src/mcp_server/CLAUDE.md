@@ -39,9 +39,19 @@ pub fn serve<R: std::io::BufRead, W: std::io::Write>(
 ```
 `initialize` → `result { protocolVersion, capabilities, serverInfo { name: "codecache", version } }`,
 echoing the request `id`. No reachable `unwrap/expect/panic`; `StorageError`/serde/io map via `?`.
-`tools/list` + `tools/call` (+ D13 outline, D14 self-healing) land in M8.2–M8.4.
+`tools/call` (+ D13 outline execution, D14 self-healing) land in M8.3–M8.4.
+
+## Shipped API (M8.2 — tools/list)
+`tools/list` → `result { tools: [ {name, description, inputSchema}, ... ] }` in the **fixed,
+deterministic order** `[codecache_search, codecache_update, codecache_outline]` (a `Vec`, never
+HashMap iteration). Schemas live in `src/mcp_server/tools.rs`
+(`pub(crate) fn tool_definitions() -> Vec<serde_json::Value>`), hand-written `serde_json::json!`
+copies of **§8.2 verbatim** (D13): search `{query(req), max_tokens=4000, file_filter=null}`,
+update `{files[](req)}`, outline `{path(req), max_tokens=2000}`. `default` values are JSON values
+of each property's own type (numbers / null). `tools/list` accepts absent `params` (not -32602).
 
 ## Status
 M0: empty stub. **M8.1 DONE (2026-06-12):** JSON-RPC framing + `initialize` handshake + error
-mapping; `serve` stub replaced (stdio wired; SSE → clean unsupported error, D4); reviewer APPROVED;
-all four gates green (149 tests, Rust 1.85). M8.2–M8.4 pending.
+mapping; `serve` stub replaced (stdio wired; SSE → clean unsupported error, D4); all four gates green.
+**M8.2 DONE (2026-06-12):** `tools/list` with all three D13 tool schemas (`tools.rs`); reviewer
+APPROVED (schemas match §8.2 char-for-char); 154 tests green (Rust 1.85). M8.3–M8.4 pending.

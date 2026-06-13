@@ -91,6 +91,15 @@ this document is the source for "what scenarios must a slice cover" referenced b
 - JSON-RPC handshake; tool registration list (all three tools — `codecache_search`,
   `codecache_update`, `codecache_outline`); `search` tool round-trip vs mock client; malformed
   request ⇒ proper JSON-RPC error.
+- **M8.2 (`tools/list`, D13):** `result.tools` is a 3-element array; name set exactly
+  {`codecache_search`,`codecache_update`,`codecache_outline`}; each tool has non-empty
+  `description` + `inputSchema{type:"object"}`. Per-tool §8.2 schema asserted EXACTLY:
+  search `query:string` / `max_tokens:integer default 4000 (JSON number)` /
+  `file_filter:string default null` / `required:["query"]`; update `files:array items:string` /
+  `required:["files"]`; outline `path:string` / `max_tokens:integer default 2000` /
+  `required:["path"]`. Determinism: id echoed, jsonrpc 2.0, fixed tool order
+  [search,update,outline] stable across two calls. (`max_tokens` defaults pinned as JSON numbers,
+  `file_filter` default as JSON null.)
 - `codecache_outline` returns the symbol skeleton from the index (no source reads — D7/D13).
 - Self-healing search (D14): query after an out-of-band file edit returns fresh content;
   unchanged files ⇒ no re-index writes; result file deleted on disk ⇒ dropped, no panic.

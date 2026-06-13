@@ -213,8 +213,11 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       `--transport sse` → clean "unsupported in v0.1" error, D4 seam); D8 `Storage` lent via clone.
       6 `tests/mcp_tests.rs` + 1 `e2e_cli` test; reviewer APPROVED (1 hygiene blocker cleared). 149 tests
       green, all four gates clean (Rust 1.85).
-- [ ] **M8.2 — tools/list**: all three tools (`codecache_search`/`codecache_update`/`codecache_outline`)
-      with exact §8.2 inputSchema (D13) → test-lead → engineering-lead
+- [x] **M8.2 — tools/list** *(DONE 2026-06-12)*: all three tools (`codecache_search`/`codecache_update`/
+      `codecache_outline`) with exact §8.2 inputSchema (D13), fixed order `[search, update, outline]`,
+      `max_tokens` defaults as JSON numbers (4000/2000), `file_filter` default `null`. Schemas in
+      `src/mcp_server/tools.rs`. 5 new tests (mcp_tests 11/11); reviewer APPROVED (schemas match §8.2
+      char-for-char); 154 tests green, all four gates clean.
 - [ ] **M8.3 — tools/call round-trip**: search→Retriever, update→Indexer stats, **D13
       `codecache_outline`** (symbol skeleton from the index, zero source reads — D7); bad args → -32602
       → test-lead → engineering-lead

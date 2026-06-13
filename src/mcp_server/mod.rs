@@ -11,6 +11,8 @@
 //! NEVER panics on malformed input — every bad line yields a structured error and the loop
 //! continues; clean EOF returns `Ok(())`. `tools/list` / `tools/call` / self-healing are M8.2–M8.4.
 
+mod tools;
+
 use std::io::{BufRead, Write};
 
 use serde_json::{json, Value};
@@ -46,6 +48,7 @@ impl CodeCacheServer {
     fn dispatch(&self, method: &str, params: Option<&Value>) -> Result<Value, (i64, String)> {
         match method {
             "initialize" => self.handle_initialize(params),
+            "tools/list" => Ok(self.handle_tools_list()),
             _ => Err((METHOD_NOT_FOUND, format!("method not found: {method}"))),
         }
     }
@@ -78,6 +81,13 @@ impl CodeCacheServer {
                 "version": crate::VERSION,
             }
         }))
+    }
+
+    /// `tools/list` → enumerate the three D13 tools (`codecache_search`, `codecache_update`,
+    /// `codecache_outline`) with their §8.2 inputSchemas, in a fixed deterministic order.
+    /// `params` is optional per MCP and is ignored.
+    fn handle_tools_list(&self) -> Value {
+        json!({ "tools": tools::tool_definitions() })
     }
 }
 

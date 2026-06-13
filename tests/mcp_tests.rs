@@ -374,3 +374,381 @@ fn malformed_stream_never_panics_and_each_response_is_structured() {
         "the loop must recover after malformed lines and still answer the good initialize; output: {text:?}"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// M8.2 — `tools/list` returns all three MCP tools with the exact §8.2 inputSchemas (D13).
+//
+// These tests pin the D13 tool-registration contract an MCP client (Claude Code) consumes. A
+// `tools/list` request is `{ "jsonrpc":"2.0", "id":N, "method":"tools/list" }` (params optional per
+// MCP); the response `result` carries a `tools` array of `{ name, description, inputSchema }`
+// objects. The schemas are asserted PRECISELY against `docs/project_plan.md` §8.2.
+//
+// PINNED M8.2 DECISIONS (the eng-lead must honor these — the tests are the contract):
+//   - The three tool `name`s are EXACTLY {`codecache_search`, `codecache_update`,
+//     `codecache_outline`}. Each tool carries a non-empty `description` and an `inputSchema`
+//     object whose `type` is `"object"`.
+//   - Property `type`s and `default`s are asserted against §8.2 verbatim. JSON Schema `default`
+//     values are emitted as JSON values of the property's own type: `max_tokens` defaults are JSON
+//     NUMBERS (integers `4000` / `2000`, NOT strings); `file_filter`'s default is JSON `null`.
+//   - `required` arrays are exact: search → `["query"]`, update → `["files"]`,
+//     outline → `["path"]`.
+//   - TOOL ORDERING is fixed: the eng-lead MUST emit the tools in the stable order
+//     [`codecache_search`, `codecache_update`, `codecache_outline`] so a client sees a
+//     deterministic list across calls. `tools_list_tool_order_is_stable_and_deterministic`
+//     asserts this order and asserts it is identical across two `tools/list` calls.
+//
+// Scope: M8.2 only lists the tools. It does NOT exercise tools/call execution (M8.3).
+// These tests fail now because the server returns -32601 (method not found) for `tools/list`.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+/// A well-formed JSON-RPC 2.0 `tools/list` request line (newline-framed), params omitted (optional
+/// per MCP). Mirrors what an MCP client sends to enumerate the server's tools.
+fn tools_list_request_line(id: i64) -> String {
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "tools/list"
+    });
+    format!(
+        "{}\n",
+        serde_json::to_string(&req).expect("serialize request")
+    )
+}
+
+/// Drive the server with a single `tools/list` request and return the parsed response value.
+fn tools_list(id: i64) -> serde_json::Value {
+    let output = run_server(&tools_list_request_line(id));
+    single_response(&output)
+}
+
+/// Extract the `result.tools` array from a `tools/list` response, asserting the envelope shape
+/// (`jsonrpc` 2.0, no `error`, a `result` carrying a `tools` array).
+fn tools_array(resp: &serde_json::Value) -> Vec<serde_json::Value> {
+    assert_eq!(
+        resp.get("jsonrpc").and_then(|v| v.as_str()),
+        Some("2.0"),
+        "tools/list response must carry jsonrpc \"2.0\"; got: {resp}"
+    );
+    assert!(
+        resp.get("error").is_none(),
+        "a well-formed tools/list must NOT produce an error object; got: {resp}"
+    );
+    let result = resp
+        .get("result")
+        .expect("tools/list response must carry a `result`");
+    result
+        .get("tools")
+        .and_then(|t| t.as_array())
+        .unwrap_or_else(|| panic!("tools/list result must carry a `tools` array; got: {result}"))
+        .clone()
+}
+
+/// Find the tool object named `name` in a `tools/list` response (asserting it is present).
+fn find_tool(resp: &serde_json::Value, name: &str) -> serde_json::Value {
+    tools_array(resp)
+        .into_iter()
+        .find(|t| t.get("name").and_then(|v| v.as_str()) == Some(name))
+        .unwrap_or_else(|| panic!("tools/list must include a tool named {name:?}; got: {resp}"))
+}
+
+/// The `inputSchema.properties` map of a tool, asserting `inputSchema` is an object of
+/// `type: "object"` carrying a `properties` object.
+fn input_schema_properties(tool: &serde_json::Value) -> serde_json::Value {
+    let schema = tool
+        .get("inputSchema")
+        .expect("tool must carry an `inputSchema`");
+    assert_eq!(
+        schema.get("type").and_then(|v| v.as_str()),
+        Some("object"),
+        "inputSchema.type must be \"object\"; got: {schema}"
+    );
+    schema
+        .get("properties")
+        .filter(|p| p.is_object())
+        .cloned()
+        .unwrap_or_else(|| panic!("inputSchema must carry a `properties` object; got: {schema}"))
+}
+
+/// The `inputSchema.required` array of a tool as a `Vec<String>` (asserting it is a string array).
+fn input_schema_required(tool: &serde_json::Value) -> Vec<String> {
+    let schema = tool
+        .get("inputSchema")
+        .expect("tool must carry an `inputSchema`");
+    schema
+        .get("required")
+        .and_then(|r| r.as_array())
+        .map(|arr| {
+            arr.iter()
+                .map(|v| {
+                    v.as_str()
+                        .unwrap_or_else(|| panic!("required entries must be strings; got: {v}"))
+                        .to_string()
+                })
+                .collect()
+        })
+        .unwrap_or_else(|| panic!("inputSchema must carry a `required` array; got: {schema}"))
+}
+
+// ── 7. tools/list lists exactly the three D13 tools ──────────────────────────────────────────
+
+/// `tools/list` returns a `result.tools` array of length 3 whose names are EXACTLY the D13 set
+/// {`codecache_search`, `codecache_update`, `codecache_outline`}. Each tool carries a non-empty
+/// `description` and an `inputSchema` object of `type: "object"`. Echoes id, jsonrpc 2.0.
+#[test]
+fn tools_list_returns_all_three_tools() {
+    let resp = tools_list(1);
+
+    assert_eq!(
+        resp.get("id").and_then(|v| v.as_i64()),
+        Some(1),
+        "tools/list response must echo the request id; got: {resp}"
+    );
+
+    let tools = tools_array(&resp);
+    assert_eq!(
+        tools.len(),
+        3,
+        "tools/list must return exactly 3 tools (D13); got: {resp}"
+    );
+
+    let mut names: Vec<&str> = tools
+        .iter()
+        .map(|t| {
+            t.get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| panic!("every tool must carry a string `name`; got: {t}"))
+        })
+        .collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        vec!["codecache_outline", "codecache_search", "codecache_update"],
+        "the tool name set must be exactly the three D13 tools; got: {resp}"
+    );
+
+    for tool in &tools {
+        let name = tool
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<none>");
+        assert!(
+            tool.get("description")
+                .and_then(|v| v.as_str())
+                .map(|d| !d.is_empty())
+                .unwrap_or(false),
+            "tool {name:?} must carry a non-empty `description`; got: {tool}"
+        );
+        assert_eq!(
+            tool.get("inputSchema")
+                .and_then(|s| s.get("type"))
+                .and_then(|v| v.as_str()),
+            Some("object"),
+            "tool {name:?} must carry an inputSchema of type \"object\"; got: {tool}"
+        );
+    }
+}
+
+// ── 8. codecache_search inputSchema matches §8.2 exactly ──────────────────────────────────────
+
+/// `codecache_search` inputSchema (§8.2): `properties.query` is `type: string`;
+/// `properties.max_tokens` is `type: integer` with `default: 4000` (JSON number);
+/// `properties.file_filter` is `type: string` with `default: null`; `required == ["query"]`.
+#[test]
+fn tools_list_includes_codecache_search_with_input_schema() {
+    let resp = tools_list(2);
+    let tool = find_tool(&resp, "codecache_search");
+    let props = input_schema_properties(&tool);
+
+    // query: string, required.
+    let query = props
+        .get("query")
+        .expect("codecache_search.inputSchema.properties must include `query`");
+    assert_eq!(
+        query.get("type").and_then(|v| v.as_str()),
+        Some("string"),
+        "search `query` must be type string; got: {query}"
+    );
+
+    // max_tokens: integer, default 4000 (a JSON number, not a string).
+    let max_tokens = props
+        .get("max_tokens")
+        .expect("codecache_search.inputSchema.properties must include `max_tokens`");
+    assert_eq!(
+        max_tokens.get("type").and_then(|v| v.as_str()),
+        Some("integer"),
+        "search `max_tokens` must be type integer; got: {max_tokens}"
+    );
+    assert_eq!(
+        max_tokens.get("default").and_then(|v| v.as_i64()),
+        Some(4000),
+        "search `max_tokens` default must be the JSON number 4000; got: {max_tokens}"
+    );
+    assert!(
+        max_tokens
+            .get("default")
+            .map(|v| v.is_number())
+            .unwrap_or(false),
+        "search `max_tokens` default must be a JSON number, not a string; got: {max_tokens}"
+    );
+
+    // file_filter: string, default null.
+    let file_filter = props
+        .get("file_filter")
+        .expect("codecache_search.inputSchema.properties must include `file_filter`");
+    assert_eq!(
+        file_filter.get("type").and_then(|v| v.as_str()),
+        Some("string"),
+        "search `file_filter` must be type string; got: {file_filter}"
+    );
+    assert!(
+        file_filter
+            .get("default")
+            .map(|v| v.is_null())
+            .unwrap_or(false),
+        "search `file_filter` default must be JSON null; got: {file_filter}"
+    );
+
+    // required is exactly ["query"].
+    assert_eq!(
+        input_schema_required(&tool),
+        vec!["query".to_string()],
+        "codecache_search required must be exactly [\"query\"]; got: {tool}"
+    );
+}
+
+// ── 9. codecache_update inputSchema matches §8.2 exactly ──────────────────────────────────────
+
+/// `codecache_update` inputSchema (§8.2): `properties.files` is `type: array` with
+/// `items.type == "string"`; `required == ["files"]`.
+#[test]
+fn tools_list_includes_codecache_update_with_input_schema() {
+    let resp = tools_list(3);
+    let tool = find_tool(&resp, "codecache_update");
+    let props = input_schema_properties(&tool);
+
+    let files = props
+        .get("files")
+        .expect("codecache_update.inputSchema.properties must include `files`");
+    assert_eq!(
+        files.get("type").and_then(|v| v.as_str()),
+        Some("array"),
+        "update `files` must be type array; got: {files}"
+    );
+    assert_eq!(
+        files
+            .get("items")
+            .and_then(|i| i.get("type"))
+            .and_then(|v| v.as_str()),
+        Some("string"),
+        "update `files.items.type` must be \"string\"; got: {files}"
+    );
+
+    assert_eq!(
+        input_schema_required(&tool),
+        vec!["files".to_string()],
+        "codecache_update required must be exactly [\"files\"]; got: {tool}"
+    );
+}
+
+// ── 10. codecache_outline inputSchema matches §8.2 exactly (D13) ──────────────────────────────
+
+/// `codecache_outline` inputSchema (§8.2 / D13): `properties.path` is `type: string`;
+/// `properties.max_tokens` is `type: integer` with `default: 2000` (JSON number);
+/// `required == ["path"]`.
+#[test]
+fn tools_list_includes_codecache_outline_with_input_schema() {
+    let resp = tools_list(4);
+    let tool = find_tool(&resp, "codecache_outline");
+    let props = input_schema_properties(&tool);
+
+    // path: string, required.
+    let path = props
+        .get("path")
+        .expect("codecache_outline.inputSchema.properties must include `path`");
+    assert_eq!(
+        path.get("type").and_then(|v| v.as_str()),
+        Some("string"),
+        "outline `path` must be type string; got: {path}"
+    );
+
+    // max_tokens: integer, default 2000 (a JSON number, not a string).
+    let max_tokens = props
+        .get("max_tokens")
+        .expect("codecache_outline.inputSchema.properties must include `max_tokens`");
+    assert_eq!(
+        max_tokens.get("type").and_then(|v| v.as_str()),
+        Some("integer"),
+        "outline `max_tokens` must be type integer; got: {max_tokens}"
+    );
+    assert_eq!(
+        max_tokens.get("default").and_then(|v| v.as_i64()),
+        Some(2000),
+        "outline `max_tokens` default must be the JSON number 2000; got: {max_tokens}"
+    );
+    assert!(
+        max_tokens
+            .get("default")
+            .map(|v| v.is_number())
+            .unwrap_or(false),
+        "outline `max_tokens` default must be a JSON number, not a string; got: {max_tokens}"
+    );
+
+    // required is exactly ["path"].
+    assert_eq!(
+        input_schema_required(&tool),
+        vec!["path".to_string()],
+        "codecache_outline required must be exactly [\"path\"]; got: {tool}"
+    );
+}
+
+// ── 11. determinism: id echoed, jsonrpc 2.0, stable tool order across calls ───────────────────
+
+/// `tools/list` is deterministic: the response echoes the request id, carries `jsonrpc: "2.0"`,
+/// and the tools are emitted in a FIXED order [search, update, outline] that is identical across
+/// two separate calls. (Pins the D13 contract: the eng-lead must emit a stable order so a client
+/// sees a deterministic list.)
+#[test]
+fn tools_list_tool_order_is_stable_and_deterministic() {
+    let resp_a = tools_list(11);
+    assert_eq!(
+        resp_a.get("jsonrpc").and_then(|v| v.as_str()),
+        Some("2.0"),
+        "tools/list must carry jsonrpc \"2.0\"; got: {resp_a}"
+    );
+    assert_eq!(
+        resp_a.get("id").and_then(|v| v.as_i64()),
+        Some(11),
+        "tools/list must echo the request id; got: {resp_a}"
+    );
+
+    let order_of = |resp: &serde_json::Value| -> Vec<String> {
+        tools_array(resp)
+            .iter()
+            .map(|t| {
+                t.get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("<none>")
+                    .to_string()
+            })
+            .collect()
+    };
+
+    let expected = vec![
+        "codecache_search".to_string(),
+        "codecache_update".to_string(),
+        "codecache_outline".to_string(),
+    ];
+    assert_eq!(
+        order_of(&resp_a),
+        expected,
+        "tools must be emitted in the fixed order [search, update, outline]; got: {resp_a}"
+    );
+
+    // Second call returns the same order — deterministic across invocations.
+    let resp_b = tools_list(12);
+    assert_eq!(
+        order_of(&resp_b),
+        order_of(&resp_a),
+        "tool order must be identical across two tools/list calls (determinism)"
+    );
+}

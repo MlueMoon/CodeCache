@@ -2,7 +2,7 @@
 
 - **Milestone:** M8 — mcp_server  ·  **Module(s):** mcp_server, cli/serve
 - **Owner (manager):** principal-engineering-manager  ·  **Created:** 2026-06-12
-- **Status:** D15 EVAL ✓  ·  DEP DECISION: **RESOLVED (2026-06-12) — HAND-ROLL JSON-RPC over stdio; serde/serde_json only, no new runtime dep. Human-ratified.**  ·  M8.1 RED ✓ GREEN ✓ REVIEW ✓ DONE ✓ (149 tests green) · M8.2 RED ▢
+- **Status:** D15 EVAL ✓  ·  DEP DECISION: **RESOLVED (2026-06-12) — HAND-ROLL JSON-RPC over stdio; serde/serde_json only, no new runtime dep. Human-ratified.**  ·  M8.1 RED ✓ GREEN ✓ REVIEW ✓ DONE ✓ (149) · M8.2 RED ✓ GREEN ✓ REVIEW ✓ DONE ✓ (154 tests green) · M8.3 RED ▢
 - **Links:** docs/ROADMAP.md#m8--mcp_server (D8/D13/D14/D15) · docs/plans/M8-mcp-server.md · docs/project_plan.md §8, §10.2, §10.3 · project_overview.md §2.5
 
 ## Goal
@@ -365,3 +365,186 @@ it is correct for this slice since no test pins port behavior, so it is not a bl
 ## OUTCOME — manager
 D15 evaluation complete. Recommendation: **HAND-ROLL** (do not adopt rmcp for v0.1). Awaiting human
 dep sign-off before sequencing RED. No code, no Cargo.toml, no ROADMAP disposition change this turn.
+
+---
+## RED — test lead (M8.2 — `tools/list` returns all three tools with exact §8.2 schemas, D13)
+
+**Slice M8.2.** 5 new integration tests appended to `tests/mcp_tests.rs` (the M8.1 file). The
+M8.1 harness (`test_server`, `run_server`, `single_response`) is REUSED unchanged; the six M8.1
+tests are untouched and still pass. RED confirmed for the right reason: the server returns
+`-32601 method not found: tools/list` (no `tools/list` handler yet).
+
+### Files
+- `tests/mcp_tests.rs` — appended an M8.2 section: 4 helpers + 5 tests (tests #7–#11). New helpers:
+  `tools_list_request_line(id)`, `tools_list(id)`, `tools_array(resp)`, `find_tool(resp, name)`,
+  `input_schema_properties(tool)`, `input_schema_required(tool)`. No edits to M8.1 code.
+
+### Tests added (all RED now)
+7. `tools_list_returns_all_three_tools` — `result.tools` is an array of length 3; name set is
+   EXACTLY {`codecache_search`, `codecache_update`, `codecache_outline`}; each tool has a non-empty
+   `description` and an `inputSchema` of `type:"object"`; id echoed, jsonrpc 2.0.
+8. `tools_list_includes_codecache_search_with_input_schema` — `query` (string), `max_tokens`
+   (integer, `default` JSON number `4000`), `file_filter` (string, `default` JSON `null`);
+   `required == ["query"]`.
+9. `tools_list_includes_codecache_update_with_input_schema` — `files` (array, `items.type ==
+   "string"`); `required == ["files"]`.
+10. `tools_list_includes_codecache_outline_with_input_schema` (D13) — `path` (string),
+    `max_tokens` (integer, `default` JSON number `2000`); `required == ["path"]`.
+11. `tools_list_tool_order_is_stable_and_deterministic` — id echoed, jsonrpc 2.0, tools emitted in
+    the FIXED order [search, update, outline], identical across two `tools/list` calls.
+
+### Pinned decisions the eng-lead MUST honor (the tests are the contract)
+1. **`tools/list` request:** `{ "jsonrpc":"2.0", "id":N, "method":"tools/list" }` — `params` is
+   optional/absent (MCP allows it; the test omits it). Dispatch must accept `tools/list` with no
+   `params` and NOT reject it as invalid-params.
+2. **Result shape the eng-lead must emit:**
+   ```json
+   { "jsonrpc":"2.0", "id":N,
+     "result": { "tools": [ { "name", "description", "inputSchema" }, ... ] } }
+   ```
+   i.e. `result.tools` is an ARRAY of tool objects, each `{ name, description, inputSchema }`.
+3. **Exactly 3 tools**, names `codecache_search`, `codecache_update`, `codecache_outline`. Each
+   `description` non-empty; each `inputSchema.type == "object"`.
+4. **`default` representation = JSON value of the property's own type.** `max_tokens` defaults are
+   JSON NUMBERS (`4000` / `2000`), asserted via both `as_i64()` and `is_number()` — emitting them
+   as strings (`"4000"`) FAILS. `file_filter`'s default is JSON `null` (`is_null()`), not the
+   string `"null"` and not an omitted key.
+5. **`required` arrays exact** (order asserted as written): search `["query"]`, update `["files"]`,
+   outline `["path"]`.
+6. **TOOL ORDER is fixed and deterministic: [`codecache_search`, `codecache_update`,
+   `codecache_outline`].** Test #11 asserts this order AND that it is identical across two calls.
+   The eng-lead must emit the tools in this stable order (e.g. a fixed array / `IndexMap`, not a
+   `HashMap` iteration). §8.2 lists them Tool 1=search, Tool 2=update, Tool 3=outline — that is the
+   pinned order.
+
+### §8.2 schema fields asserted (verbatim from project_plan.md §8.2, lines ~1331–1427)
+- **codecache_search.inputSchema.properties:** `query{type:string}`,
+  `max_tokens{type:integer, default:4000}`, `file_filter{type:string, default:null}`;
+  `required:["query"]`. (Property `description` strings are NOT asserted — only types/defaults/required.)
+- **codecache_update.inputSchema.properties:** `files{type:array, items:{type:string}}`;
+  `required:["files"]`.
+- **codecache_outline.inputSchema.properties:** `path{type:string}`,
+  `max_tokens{type:integer, default:2000}`; `required:["path"]`.
+
+### Contract clarifications / what is NOT pinned (eng-lead latitude)
+- **Per-property `description` strings are NOT asserted** by these tests (only tool-level
+  `description` non-emptiness is). The eng-lead SHOULD still emit the §8.2 description text for
+  client UX, but a wording change won't break M8.2 tests. Tool-level `description` MUST be non-empty.
+- **No `additionalProperties` / `$schema` assertions.** The eng-lead may add them; the tests use
+  `.get(...)` navigation (not strict equality on the whole schema), so extra keys are tolerated.
+- **`tools/call` is OUT of scope** (M8.3). These tests only enumerate tools; they never invoke one.
+
+### Confirmed RED output (Rust 1.85, this session)
+`cargo test --test mcp_tests`:
+```
+test result: FAILED. 6 passed; 5 failed; 0 ignored
+failures:
+  tools_list_returns_all_three_tools
+  tools_list_includes_codecache_search_with_input_schema
+  tools_list_includes_codecache_update_with_input_schema
+  tools_list_includes_codecache_outline_with_input_schema
+  tools_list_tool_order_is_stable_and_deterministic
+panicked: a well-formed tools/list must NOT produce an error object; got:
+  {"error":{"code":-32601,"message":"method not found: tools/list"},"id":N,"jsonrpc":"2.0"}
+```
+→ correct reason: `dispatch`'s default arm returns -32601 for `tools/list`; no handler exists yet
+(the GREEN target). The 6 M8.1 tests still pass (untouched, not weakened).
+
+`cargo fmt --check` → clean (whole tree; `tests/mcp_tests.rs` formatted). The M8.1 fmt blocker is
+not repeated.
+
+### GREEN target for the eng-lead
+Add a `"tools/list"` arm to `CodeCacheServer::dispatch` returning `Ok(json!({ "tools": [ … ] }))`
+with the three tool objects in the fixed [search, update, outline] order and the exact §8.2
+schemas above. No new deps; serde_json `json!` only. Keep `serve`/framing untouched.
+
+## GREEN — engineering lead (M8.2)
+
+**Slice M8.2 GREEN (2026-06-12).** `tools/list` now lists the three D13 tools with the exact
+§8.2 inputSchemas in the pinned [search, update, outline] order. serde_json `json!` only — no
+new deps, no rmcp, no tokio. All five gates green.
+
+### Files changed
+- `src/mcp_server/tools.rs` — **NEW.** Holds the three tool schemas as hand-written `json!`
+  values mirroring §8.2 verbatim (incl. the real description text). `pub(crate) fn
+  tool_definitions() -> Vec<Value>` returns them in the fixed order `vec![search_tool(),
+  update_tool(), outline_tool()]` (a `Vec`, never `HashMap` iteration — guarantees determinism).
+  One `fn` per tool keeps each schema readable.
+- `src/mcp_server/mod.rs` — added `mod tools;`; added a `"tools/list"` arm to `dispatch` →
+  `Ok(self.handle_tools_list())`; new `handle_tools_list(&self) -> Value` returns
+  `json!({ "tools": tools::tool_definitions() })`. `serve`/framing/`initialize` untouched.
+
+### Result shape emitted
+```json
+{ "jsonrpc":"2.0", "id":N,
+  "result": { "tools": [
+    { "name":"codecache_search",  "description":"…", "inputSchema":{…} },
+    { "name":"codecache_update",  "description":"…", "inputSchema":{…} },
+    { "name":"codecache_outline", "description":"…", "inputSchema":{…} } ] } }
+```
+
+### How each M8.2 test passes
+7. `tools_list_returns_all_three_tools` — `tool_definitions()` returns exactly 3 objects, names
+   {search, update, outline}, each with non-empty §8.2 `description` and `inputSchema.type ==
+   "object"`. Envelope echoes `id`, `jsonrpc:"2.0"`, no `error` (dispatch returns `Ok`).
+8. `..._codecache_search_...` — `query{string}`, `max_tokens{integer, default:4000}` (JSON
+   number via `json!` literal `4000`), `file_filter{string, default:null}` (JSON `null`);
+   `required:["query"]`.
+9. `..._codecache_update_...` — `files{array, items:{type:"string"}}`; `required:["files"]`.
+10. `..._codecache_outline_...` — `path{string}`, `max_tokens{integer, default:2000}` (JSON
+    number); `required:["path"]`.
+11. `tools_list_tool_order_is_stable_and_deterministic` — fixed `Vec` order [search, update,
+    outline]; identical across two calls because `tool_definitions()` is a pure constructor.
+
+### Deviations / notes
+- None. `params` on `tools/list` is accepted-and-ignored (the arm takes no params); absent
+  `params` is NOT rejected as invalid-params. `tools/call` execution remains out of scope (M8.3).
+- Module split: schemas live in `src/mcp_server/tools.rs` (the plan names this file for
+  schemas+handlers). `tool_definitions` is `pub(crate)`; only `mod.rs` consumes it.
+
+### Gates (all green)
+- `cargo test --test mcp_tests` → **11/11** (6 M8.1 + 5 M8.2).
+- `cargo test` (full suite) → **154 passed, 0 failed** (was 149; +5 M8.2).
+- `cargo clippy --all-targets -- -D warnings` → clean.
+- `cargo fmt --check` → clean (whole tree).
+- `cargo build` → clean.
+
+## REVIEW — code reviewer (M8.2)
+
+**VERDICT: APPROVE** (reviewed 2026-06-12, Rust 1.85). The three §8.2 tool schemas match the
+plan EXACTLY; tool order is deterministic via `Vec`; `tools/list` accepts absent params and
+echoes id; no reachable panic/unwrap/expect; no new deps; all four gates green.
+
+### Gate results
+- `cargo fmt --check` → clean (whole tree; the M8.1 fmt blocker is NOT repeated).
+- `cargo clippy --all-targets -- -D warnings` → clean (exit 0).
+- `cargo test` → **154 passed, 0 failed** (27 lib unit + 127 integration; mcp_tests 11/11).
+- `cargo build` → clean (exit 0).
+
+### Schema fidelity to §8.2 (the crux) — verified EXACTLY, char-by-char
+- **codecache_search**: `query{type:"string"}`; `max_tokens{type:"integer", default:4000}`
+  (JSON number); `file_filter{type:"string", default:null}` (JSON null); `required:["query"]`.
+- **codecache_update**: `files{type:"array", items:{type:"string"}}`; `required:["files"]`.
+- **codecache_outline (D13)**: `path{type:"string"}`; `max_tokens{type:"integer", default:2000}`
+  (JSON number); `required:["path"]`.
+- All three tool-level `description`s and all six property `description`s are the real §8.2 text
+  verbatim (string-equality checked against project_plan.md — no placeholders).
+
+### What I verified GOOD
+- **Deterministic order via Vec** (tools.rs:15-17): `tool_definitions()` returns
+  `vec![search_tool(), update_tool(), outline_tool()]` — fixed `[search, update, outline]`, never
+  HashMap iteration. Test #11 confirms identical order across two calls.
+- **tools/list accepts absent params** (mod.rs:51, 89-91): dispatch arm takes no params and is
+  NOT routed through invalid-params; id echoed via the shared `handle_line` path; result shape is
+  `{ tools: [...] }`. Minimal 3-line diff to mod.rs; framing/`initialize` untouched.
+- **No reachable panic/unwrap/expect** in tools.rs or the mod.rs additions; pure `json!`
+  constructors, no IO, no fallible calls.
+- **No new deps**: `git diff HEAD -- Cargo.toml` empty; serde_json `json!` only.
+- **Tests not weakened**: all 6 M8.1 + 5 M8.2 present and meaningful (assert on types, defaults
+  via both `as_i64()` and `is_number()`, null via `is_null()`, exact `required`, stable order).
+
+### Minor (non-blocking — manager close-out, brief protocol step 6)
+- `docs/TODO.md:216` still shows M8.2 as `[ ]`, and `src/mcp_server/CLAUDE.md:42,47` still read
+  "M8.2–M8.4 pending" / "149 tests". The root golden rule ties doc updates to the code change;
+  these should be flipped to DONE / "154 tests" at manager close-out. Not a code-correctness
+  block — the source+test contract is complete and correct.

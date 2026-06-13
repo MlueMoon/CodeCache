@@ -19,7 +19,7 @@ directory holds the wider integration/E2E/property surface.
 | `formatter_tests.rs` | M7.1 formatter golden outputs: TOON/JSON/text + JSON round-trip + D13 text ordering (goldens in `fixtures/golden/`). | M7 |
 | `cli_tests.rs` | M7.2/M7.3 CLI: clap parsing/defaults/exit-codes + handler behavior (init/index/update/query/status/config; serve stub) via `assert_cmd`. | M7 |
 | `e2e_cli.rs` | M7.4 full E2E through the built binary: init→index→query happy path + JSON parse + failure-path nonzero/exit-code on a copied fixture repo. + M8.1 `serve --transport sse` → clean unsupported error. | M7/M8 |
-| `mcp_tests.rs` | M8.1 MCP server: JSON-RPC framing + `initialize` handshake + error codes (-32700/-32601/-32602) + no-panic recovery, over an in-memory reader/writer seam (no real stdio). | M8 |
+| `mcp_tests.rs` | M8.1 MCP server: JSON-RPC framing + `initialize` handshake + error codes (-32700/-32601/-32602) + no-panic recovery. M8.2 `tools/list`: all three D13 tools with exact §8.2 inputSchemas + stable tool order. Over an in-memory reader/writer seam (no real stdio). | M8 |
 | `fixtures/golden/` | Committed golden formatter outputs (`query_{basic,empty}.{toon,json,txt}`) compared CRLF→LF-normalized. | M7 |
 | `fixtures/` | Sample source trees / files used by integration + E2E tests (added as needed). | M3+ |
 
