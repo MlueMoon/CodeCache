@@ -351,6 +351,28 @@ project_plan §3.2.2 gains the method signature and §8.2 Tool 3 notes the index
 `mcp_server` outline handler formats these rows via the M7 text skeleton-line shape (D13). RED for
 M8.3 drives the new method + the `tools/call` outline round-trip.
 
+### D20 — cold-index 10K-LOC budget miss: tracked, deferred to v0.1.x  · **Adopted at M10.1** (plan: M10.1) — *spec: §5.4*
+M10.1 measured the cold-index hot path at the §5.4 budget checkpoints (Windows 11, Rust 1.85,
+release). Result: **10K LOC = 6.04 s (p50) vs the < 5 s budget — MISS**; 100K LOC = 13.54 s vs
+< 30 s — PASS (>2× headroom); incremental 10-file = 190 ms vs < 2 s — PASS; index size = 12.3 MB
+vs < 100 MB — PASS; query p95 = 0.51 ms vs < 500 ms — PASS; hash 1K files = 459 ms vs < 500 ms —
+PASS. The 10K result is **non-monotonic vs budget** (the larger 100K corpus clears its budget while
+the smaller 10K does not clear its tighter one), which points at **fixed per-iteration overhead**
+dominating at 10K scale: each `pipeline::index_file` calls `Storage::insert_chunks`, which opens and
+commits **its own SQLite transaction per file** (`storage/mod.rs:124-149`), so a 200-file index pays
+~200 commit fsyncs; plus a cold DB file is created per bench iteration (Windows fsync cost not present
+on Linux CI). This is the exact per-file-transaction overhead the M5.2 TODO flagged for "M10
+profiling." **Decision: do NOT block the v0.1 release on this.** Rationale: (1) the harder absolute
+target (100K < 30 s) passes with margin; (2) the M10 plan's assertion policy explicitly anticipated
+a possible 10K miss and prescribes record-the-number + trend-track in `bench.yml` rather than a hard
+CI assert (machine variance); (3) the fix — batch inserts across files into one transaction (or wrap
+`index_all` in a single transaction) — is a **production change that must be a deliberate, test-first
+slice preserving the D2 per-file isolation guarantee**, not scope-creep folded into a benches/
+release-prep milestone. **Follow-up (v0.1.x, tracked in `benches/CLAUDE.md` + `docs/TODO.md`):**
+cross-file transaction batching in the indexer to bring 10K cold-index under 5 s; re-measure. The miss
+is documented honestly in the release notes (CHANGELOG, M10.4). Owner: manager (this decision) +
+performance-bench-engineer (measurement) + engineering-lead (the future optimization slice).
+
 ---
 
 ## Deferred to v0.2+ (from project_plan §9.2)

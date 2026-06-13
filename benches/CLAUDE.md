@@ -8,18 +8,61 @@ scenarios in [`../docs/TEST_STRATEGY.md`](../docs/TEST_STRATEGY.md).
 Back performance claims with measurements, not intuition. Each perf-critical path gets a
 criterion bench compared against its documented budget; regressions are caught before release.
 
-## Budgets (from project_plan §11 — enforced at the milestones that own each path)
-| Path | Budget | Milestone |
-|---|---|---|
-| Query latency | p95 < 500ms | M6 |
-| Full index size | < 100MB (reference repo) | M5 |
-| Incremental re-index | < 2s (single changed file) | M5 |
-| Token reduction | ≥ 40% vs full-file context (5 tasks) | M10 |
+## Budgets (from project_plan §1.3 / §5.4 / §11 — enforced at the milestones that own each path)
+| Path | Budget | Milestone | Measured (M10.1, Win11/Rust 1.85/release) | Status |
+|---|---|---|---|---|
+| Query latency | p95 < 500ms (100K LOC) | M6 / M10 | p95 = 0.51 ms (M6.4: 1.17 ms) | PASS (≫ headroom) |
+| Full index size | < 100MB (100K-LOC synthetic) | M5 / M10 | 12.32 MB (12,922,880 B) | PASS (hard assert) |
+| Incremental re-index | < 2s (10-file change) | M5 / M10 | p50 = 190 ms | PASS (~10×) |
+| Cold index 10K LOC | < 5s | M10 | p50 = 6.04 s | **MISS — tracked, D20** |
+| Cold index 100K LOC | < 30s | M10 | p50 = 13.54 s | PASS (>2×) |
+| Hash 1K files | < 500ms | M10 | 459 ms total (compute_file_hash) | PASS (hard assert) |
+| Retrieval quality (L1) | recorded vs gold (no hard gate) | M10 (D16) | M10.2 | — |
+
+> The retired "token reduction ≥40% vs file dumping on 5 tasks" budget is **gone** (D16): file
+> dumping is a strawman baseline in 2026; the grep-baseline comparison is agent-in-loop at research
+> track R3, not a v0.1 release gate. M10.2 records Layer-1 retrieval quality only.
 
 ## Status
-M0: placeholder only (`.gitkeep`). Real benches land at **M10** (full criterion suite +
-token-reduction benchmark), with latency/index benches wired earlier where their module ships
-(M5 indexer, M6 retriever). Run via the `/bench` skill; CI runs them on schedule (`bench.yml`).
+Real benches landed at **M10.1** (full criterion suite). Latency/index benches were wired earlier
+where their module shipped (M5 indexer, M6 retriever). Run via the `/bench` skill; CI runs them on
+schedule (`bench.yml`, M10.3).
+
+### M10.1 — full systems-budget suite (2026-06-12)
+Benches: `indexing.rs` (`cold_index/{500_loc,10k_loc,100k_loc}`, `incremental/10_files`,
+`index_size/100k_loc_db_bytes`), `query_bench.rs` (M6.4, re-confirmed), `hashing_bench.rs`
+(`hash_1k_files/{compute_file_hash,compute_content_hash}_per_file` + one-shot 1K-file hard assert).
+Fixture I/O is outside every timed closure; inputs are deterministic. Numbers in the budget table
+above; p95/p99 read from `target/criterion/.../new/sample.json` (criterion prints only the median).
+**Assertion policy:** hard asserts only where the metric is stable and met (index size; hash 1K);
+all machine-variable timings are tracked-not-asserted and trend-guarded by `bench.yml` (M10.3).
+
+**Cold-index 10K-LOC MISS (6.04 s vs < 5 s) — Decision Log D20.** Tracked, NOT a v0.1 release
+blocker; deferred to a v0.1.x test-first optimization slice. Root cause: per-file SQLite transaction
+commits (`Storage::insert_chunks` opens+commits a transaction per file → ~200 fsyncs for a 200-file
+index) plus per-iteration cold-DB creation on Windows. The harder 100K < 30 s target passes with
+>2× margin (non-monotonic vs budget confirms fixed per-iteration overhead, not algorithmic blowup).
+**Follow-up (v0.1.x):** batch inserts across files into one transaction (preserving D2 per-file
+isolation), then re-measure 10K cold index.
+
+### M10.1 — FTS5 query-plan baseline (EXPLAIN QUERY PLAN, persistent DB) — carried from M1/M6.4
+M6.4 deferred this because its bench DB was a per-run tempfile. Captured at M10.1 against a
+**persistent** on-disk DB seeded via the public `Storage` API (5_000 chunks ≈ 100K LOC) by
+`examples/explain_query_plan.rs` (`cargo run --release --example explain_query_plan`). The §6
+`SEARCH` SQL (`src/storage/queries.rs::SEARCH`) under `MATCH "authenticate OR user" LIMIT 20`:
+```
+QUERY PLAN
+|--SCAN symbols VIRTUAL TABLE INDEX 0:M13
+`--USE TEMP B-TREE FOR ORDER BY
+```
+Read (specialist): the FTS5 inverted index **is** used (`VIRTUAL TABLE INDEX 0:M13` = the MATCH
+path, not a full scan); the contentful FTS5 table (D11) returns the UNINDEXED columns
+(`file_path`/`start_byte`/`end_byte`/`start_line`/`end_line`/`language`) with **no second lookup**
+(zero-extra-lookup, as D7/D11 intended); `USE TEMP B-TREE FOR ORDER BY` is the expected bounded
+sort on the computed `bm25()` value (sorts only the match set, not the corpus), with `rowid ASC` the
+deterministic tie-break. No concerns — textbook FTS5 MATCH + bm25-rank plan. Re-confirmed
+independently via the `sqlite3` 3.41.2 shell against the same file. If `SEARCH` ever changes,
+re-capture this and update `examples/explain_query_plan.rs`'s verbatim copy in the same change.
 
 **M5.2: `indexing.rs` wired (cold-index skeleton — informational, not CI-gated).**
 - Bench: `cold_index/index_all_50_py_files` — 50 synthetic Python files (~500 LOC), cold SQLite DB

@@ -254,14 +254,31 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
 - [x] **M9 COMPLETE** — language coverage = **Python / TypeScript / Go** (§1.3 success criterion).
 
 ## Phase 10 — Benchmarks + Release (M10) · plan: [plans/M10-benchmarks-release.md](plans/M10-benchmarks-release.md)
-- [ ] Full criterion suite vs systems budgets (p95<500ms, index<100MB, incr<2s, cold-index, hash) → perf
-      - M6 baseline already met: query p95 = 1.17 ms (`benches/query_bench.rs`, 100K-LOC seed) ≪ 500 ms.
-      - [ ] **EXPLAIN QUERY PLAN baseline** for the §6 `SEARCH` SQL (carried from M1 + M6.4) — capture
-            against a **persistent** fixture DB (M6.4's bench DB is a per-run tempfile) → perf + specialist
-- [ ] **D16 Layer-1 retrieval-quality scoring** (replaces the 5-task token-reduction benchmark):
+- [x] **M10.1** Full criterion suite vs systems budgets → perf + specialist. **DONE 2026-06-12.**
+      Benches: `indexing.rs` (cold 10K/100K, incremental 10-file, index size), `query_bench.rs`
+      (re-confirmed), `hashing_bench.rs` (NEW, 1K files). Measured (Win11/Rust 1.85/release):
+      query p95 = **0.51 ms** (< 500 ms ✅), index size = **12.3 MB** (< 100 MB ✅), incremental =
+      **190 ms** (< 2 s ✅), cold 100K = **13.54 s** (< 30 s ✅), hash 1K = **459 ms** (< 500 ms ✅),
+      cold 10K = **6.04 s** (< 5 s ❌ **MISS — tracked, Decision Log D20**; not a release blocker;
+      v0.1.x transaction-batching follow-up). Numbers + assertion policy in `benches/CLAUDE.md`.
+      Reviewer APPROVE (after doc-update). Commit: (see OUTCOME in brief).
+      - [x] **EXPLAIN QUERY PLAN baseline** for the §6 `SEARCH` SQL (carried from M1 + M6.4) —
+            captured against a **persistent** fixture DB via `examples/explain_query_plan.rs`. Plan:
+            `SCAN symbols VIRTUAL TABLE INDEX 0:M13` (FTS5 index used, no full scan) + bounded
+            `USE TEMP B-TREE FOR ORDER BY` on bm25; UNINDEXED cols returned with no extra lookup
+            (D7/D11). Verbatim plan + read in `benches/CLAUDE.md`. → perf + specialist
+      - [ ] **v0.1.x follow-up (D20):** batch indexer inserts across files into one transaction
+            (preserve D2 per-file isolation), re-measure 10K cold index < 5 s → engineering-lead (test-first)
+- [ ] **M10.2 D16 Layer-1 retrieval-quality scoring** (replaces the 5-task token-reduction benchmark):
       ContextBench-Lite gold-context Recall/Precision/F1 + hand-verified micro-suite
       (`project_overview.md` §5.1–5.2) → perf
-- [ ] `release.yml`; version bump; `v0.1.0` tag + crates.io publish; install smoke test → devops-release
+- [ ] **M10.3 CI bench wiring + parity**: `bench.yml` (scheduled + workflow_dispatch, NOT per-PR;
+      cache C compile); confirm `ci.yml` still mirrors local hooks → devops-release
+- [ ] **M10.4 release v0.1.0 — STAGED, human-gated**: author `release.yml`; confirm `Cargo.toml`
+      0.1.0 + crates.io metadata (fix placeholder `repository` URL); CHANGELOG / README quickstart /
+      `CLAUDE_CODE_SETUP.md` / `CONTRIBUTING.md` / `LICENSE`; LOCAL DRY RUN (`cargo publish
+      --dry-run`, `cargo package`, build binary, init→index→query). **Tag/publish/remote-push NOT
+      executed — staged awaiting human go-ahead.** → devops-release + manager
 
 ## Research track (R1–R4, post-M8; M9 can interleave) · spec: [`../project_overview.md`](../project_overview.md) §5–§6 · ROADMAP "Research track"
 - [ ] **R1 harness**: agent loop with pluggable retrieval tools; trajectory logging; ContextBench
