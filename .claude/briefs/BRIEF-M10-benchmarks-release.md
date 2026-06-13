@@ -571,4 +571,138 @@ one-line brief correction, but it has zero effect on code, metrics, or gates.
   in `benches/CLAUDE.md` M10.2 section + `docs/TODO.md` Phase 10.
 - **Gates:** fmt / clippy -D warnings / test --all (**196**, +15 from M10.1's 181) all clean. No
   src/ change, no new dependency, no new public API.
-- **Commit:** (filled at commit) — "M10.2: D16 Layer-1 retrieval-quality scoring …". **Slice DONE.**
+- **Commit:** `5650596` — "M10.2: D16 Layer-1 retrieval-quality scoring (offline micro-suite proxy)".
+  Working tree clean; nothing pushed/tagged. **Slice DONE.**
+
+---
+
+## GREEN — devops (M10.3)
+
+**Date:** 2026-06-12  **Agent:** devops-release-engineer
+
+### Files authored / changed
+
+| File | Change |
+|---|---|
+| `.github/workflows/bench.yml` | NEW. Scheduled criterion benchmark runner (weekly cron + workflow_dispatch). See full policy below. |
+| `.github/CLAUDE.md` | Updated: bench.yml row in layout table marked M10.3 (landed); release.yml row marked M10.4 (pending); added bench.yml trigger/caching/artifact/policy section; updated Status block. |
+
+### bench.yml — trigger model
+
+- **Triggers:** `schedule` (cron `0 2 * * 1` — weekly Monday 02:00 UTC) + `workflow_dispatch`. NOT on push/pull_request — benches are slow and machine-variable; per-PR runs add noise without actionable signal. This matches the brief's explicit constraint ("scheduled, not per-PR").
+- **OS:** `ubuntu-latest` only. Single-OS is sufficient for trend-tracking; cross-OS timing noise (Windows vs Linux temp-dir I/O, etc.) would make bench-to-bench comparison meaningless without adding value.
+- **Concurrency:** `cancel-in-progress: true` on the `bench-…-<ref>` group — superseded scheduled runs (e.g. two dispatches racing) are cancelled, consistent with ci.yml's concurrency block.
+
+### bench.yml — caching
+
+- Identical key pattern to ci.yml: `${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}` with `${{ runner.os }}-cargo-` as the restore prefix. Mandatory because `rusqlite bundled` + tree-sitter grammars compile C from source (slow cold build). Cache invalidates on any dep or toolchain change.
+
+### bench.yml — artifact
+
+- `actions/upload-artifact@v4` uploads `target/criterion/` as `criterion-results-<run_id>`, 90-day retention, `if: always()` so results are captured even if a hard-assert bench fails.
+- Criterion writes `target/criterion/*/new/sample.json` with all raw samples; p95/p99 are computed from these (criterion does not print them to stdout). Comparing sample.json across successive weekly runs is the primary trend-tracking mechanism.
+
+### bench.yml — trend-not-gate policy (Decision Log D20)
+
+Two in-code hard asserts run before criterion sampling and will fail the job if their budgets regress — that is correct and desired:
+- `indexing.rs` → `assert_budget_index_size`: index < 100MB (12.3MB measured; ~8× headroom).
+- `hashing_bench.rs` → `assert_budget_hash_1k_files`: hash-1K total wall-clock < 500ms (459ms measured; marginal headroom).
+
+All machine-variable timing benches are recorded via the artifact and are NOT asserted in CI:
+- `cold_index/10k_loc`: budget MISSED (6.04s p50 vs < 5s, D20). A hard assert here would permanently break the scheduled job. Tracked-not-asserted; deferred to v0.1.x transaction-batching slice.
+- `cold_index/100k_loc`: passes (13.54s p50 vs < 30s) but machine-variable; tracked.
+- `incremental/10_files`: passes (190ms p50 vs < 2s) but machine-variable; tracked.
+- `query_latency`: passes (0.51ms p95 vs < 500ms) but machine-variable; tracked.
+
+A comment in bench.yml at the top explains this policy and cites D20 explicitly.
+
+### bench.yml — timeout
+
+`timeout-minutes: 60`. The 100K-LOC cold-index bench takes ~13–14s per sample × 10 samples ≈ 140s; all three benches together should complete in well under 30 minutes on a GitHub-hosted runner. 60 minutes is a generous ceiling that accommodates cache-miss builds without hanging forever on a pathological regression.
+
+### bench.yml — no new dependency
+
+No Cargo.toml change. No new action beyond `actions/checkout@v4`, `actions/cache@v4`, and `actions/upload-artifact@v4` — all already used or specified. Actions are pinned to major version tags (v4) consistent with ci.yml.
+
+### CI parity confirmation (ci.yml vs local hooks)
+
+Local hooks (`check-on-stop.ps1`, `fmt-on-edit.ps1`) run:
+- `cargo fmt` on every `.rs` edit (fmt-on-edit.ps1 line 20)
+- `cargo clippy --all-targets -- -D warnings` at Stop (check-on-stop.ps1 line 19)
+- `cargo test --quiet` at Stop (check-on-stop.ps1 line 24, equivalent to cargo test)
+
+ci.yml `gates` job runs:
+- `cargo fmt --all -- --check` (Format gate 1 — the CI equivalent of fmt-on-edit)
+- `cargo clippy --all-targets -- -D warnings` (Lint gate 2 — byte-identical flags)
+- `cargo test --all` (Test gate 3 — `--all` is equivalent to the default workspace test run; `--quiet` in the hook is a display flag only, does not change what is tested)
+
+**Verdict: MATCHED. No drift. ci.yml needs no change.** bench.yml adds nothing to the local gate set (benches are not run locally by any hook); ci.yml is unaffected.
+
+### YAML well-formedness check (manual)
+
+The bench.yml was reviewed line-by-line for:
+- Correct `on:` block structure (schedule cron string is a valid 5-field cron expression: `0 2 * * 1` = minute 0, hour 2, any day-of-month, any month, Monday).
+- `concurrency:` block uses the same `cancel-in-progress: true` pattern as ci.yml.
+- `env:` block mirrors ci.yml (`CARGO_TERM_COLOR`, `RUST_BACKTRACE`).
+- `jobs.bench.steps` sequence: checkout → toolchain install → cache → `cargo bench` → upload-artifact. All step names are unique and properly indented.
+- `uses:` references use pinned major versions (v4) matching ci.yml.
+- `if: always()` on the upload step ensures artifacts are collected even when `cargo bench` exits non-zero (hard-assert failure).
+- `retention-days: 90` is a valid integer for `actions/upload-artifact@v4`.
+- `timeout-minutes: 60` is on `jobs.bench`, not on a step (correct placement).
+
+No YAML syntax errors detected.
+
+### Bench compile check (cargo bench --no-run)
+
+Not run locally (the brief permits but does not require it — M10.1 already verified all three benches compile and complete without panic). The brief confirms: "They do — M10.1 verified." Working tree is clean (196 tests green from M10.2 commit).
+
+> Status line: **M10.3 — GREEN ✅ · REVIEW pending · DONE pending (manager)**
+
+### M10.3 — CI bench wiring + parity — **APPROVE** (code-reviewer, 2026-06-12)
+
+YAML + docs only; reviewed by reading (GitHub Actions not runnable here). All five verification
+axes pass.
+
+**Scope (clean):** working tree for this slice = `.github/workflows/bench.yml` (new),
+`.github/CLAUDE.md` (modified), this brief (modified). No Rust, no `Cargo.toml`, no `src/`,
+no `benches/*.rs` change. Confirmed via `git status --porcelain`.
+
+**1. bench.yml correctness — verified:**
+- Triggers are `schedule` (cron `0 2 * * 1` — valid 5-field weekly Monday 02:00 UTC) + `workflow_dispatch` ONLY. NO `push`/`pull_request` (bench.yml:32-36). Matches the slice's scheduled-not-per-PR requirement.
+- Caching key is byte-identical to ci.yml: `${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}` + `${{ runner.os }}-cargo-` restore prefix, same `path` list, `actions/cache@v4` (bench.yml:70-80 vs ci.yml:38-48). Covers the rusqlite-bundled + tree-sitter C compile.
+- Toolchain install honors rust-toolchain.toml (`rustup show active-toolchain || rustup toolchain install`), identical to ci.yml (bench.yml:62-65).
+- `concurrency` with `cancel-in-progress: true` on `bench-${{ github.workflow }}-${{ github.ref }}` (bench.yml:39-41) — cancels superseded runs.
+- `timeout-minutes: 60` is on the **job** (`jobs.bench`, bench.yml:54), not a step. Correct placement.
+- Artifact: `actions/upload-artifact@v4`, `if: always()` (bench.yml:101-107) so results are captured even when a hard-assert bench fails. 90-day retention is a valid integer.
+- Single-OS `ubuntu-latest` — acceptable for trend-tracking.
+- YAML well-formed: correct `on:`/`concurrency:`/`env:`/`jobs:` nesting and indentation, unique step names, pinned `@v4` actions.
+
+**2. Trend-not-gate policy (D20) honored — verified:** bench.yml runs `cargo bench` (bench.yml:94) and adds NO CI step that hard-asserts the machine-variable cold-10K timing. The ONLY failure path is the two in-code hard asserts, which I confirmed exist and assert exactly what the YAML/docs claim:
+- `benches/indexing.rs:310-313` — `bench_index_size` panics if DB size > `100 * 1024 * 1024` bytes (index < 100MB; stable byte check).
+- `benches/hashing_bench.rs:92-119` — `assert_budget_hash_1k_files` runs before criterion sampling (hash-1K < 500ms).
+- `bench_cold_10k_loc` / `bench_cold_100k_loc` / incremental / query benches have NO hard assert (verified: `indexing.rs:138` "No hard assert — informational baseline"). The cold-10K miss (6.04s p50 vs <5s, D20) is tracked-not-asserted, so the scheduled job will not be permanently broken. This matches ROADMAP D20 (deferred to a v0.1.x test-first transaction-batching slice; not a release blocker). The policy is documented in the bench.yml header comment (lines 10-20) citing D20 explicitly.
+
+**3. CI parity intact — CONFIRMED:** ci.yml was NOT touched by this slice (not in the M10.3 working tree; only bench.yml is new). Its three gate steps still mirror the local hooks exactly:
+- Format: ci.yml:51 `cargo fmt --all -- --check` ≡ `fmt-on-edit.ps1:20` `cargo fmt` (write vs `--check` is the correct CI-vs-local pairing).
+- Lint: ci.yml:54 `cargo clippy --all-targets -- -D warnings` — byte-identical to `check-on-stop.ps1:19`.
+- Tests: ci.yml:57 `cargo test --all` ≡ `check-on-stop.ps1:24` `cargo test --quiet` (`--quiet` is display-only; `--all` covers the workspace).
+- ENGINEERING_PLAN §5 (line 101) already lists "scheduled `bench.yml`" as the Perf gate, so this wiring aligns with the documented parity contract rather than expanding the local gate set. bench.yml adds nothing locally enforced.
+
+**4. Docs accurate — verified, no overclaim:** `.github/CLAUDE.md` layout table (bench.yml row = M10.3 landed), the new "bench.yml — trigger model + policy (M10.3)" section (lines 29-35), and the Status block (lines 37-39) all faithfully describe what bench.yml does: cron `0 2 * * 1` + workflow_dispatch, ubuntu-latest, identical cache key, 60-min timeout, D20 trend-not-gate with the two in-code asserts as the only fail path, `criterion-results-<run_id>` @v4 90-day artifact. The 100K "~13–14s/sample" figure matches the GREEN section's measured 13.54s. release.yml correctly still marked M10.4 pending. No claim exceeds the YAML.
+
+**5. Gates:** Not re-run — this is a YAML+docs-only change that cannot affect fmt/clippy/test, and M10.2 left the tree at 196/0 green. No regression possible from this diff.
+
+**Findings:** none (no blocker, no major, no minor). The earlier devops self-note that `cargo bench --no-run` was not re-run is acceptable — M10.1 already verified all three harnesses compile and run, and this slice changes no Rust.
+
+**Verdict:** APPROVE. ci.yml-parity confirmed intact (untouched; three steps still mirror the local hooks). bench.yml is correct, D20-compliant (no hard assert on the machine-variable cold-10K timing; only the two stable in-code asserts can fail the job), and the docs match. Clear for manager to mark DONE.
+
+> Status line: **M10.3 — GREEN ✅ · REVIEW ✅ APPROVE · DONE pending (manager)**
+
+### M10.3 — DONE ✅ (manager, 2026-06-12)
+- **Reviewer APPROVE, 0 findings.** `bench.yml` correct (schedule + dispatch only, ci.yml-identical
+  caching, single-OS, 60-min timeout, criterion artifact, D20 trend-not-gate with only the two
+  stable in-code asserts as the fail path). `ci.yml` untouched + still mirrors local hooks.
+- **Aligned:** YAML + docs only; no Rust/Cargo.toml/src change. `.github/CLAUDE.md` accurate.
+- **Decisions:** no new decision — bench.yml operationalizes D20's trend-not-gate disposition.
+- **Gates:** unchanged by a YAML+docs diff; tree green at 196/0 from M10.2.
+- **Commit:** (filled at commit) — "M10.3: scheduled bench CI + parity …". **Slice DONE.**

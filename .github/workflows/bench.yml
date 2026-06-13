@@ -1,0 +1,107 @@
+# bench.yml — scheduled criterion benchmark runs for CodeCache.
+#
+# TRIGGER MODEL: scheduled (weekly) + workflow_dispatch ONLY.
+# NOT triggered on push/pull_request — criterion benches are slow and produce machine-variable
+# output that would add noise to every PR. The goal is trend-tracking over time, not per-PR
+# gating. A slow CI machine or a hot machine can shift timing benches by 2–3×; that is not
+# actionable on a PR boundary. Regressions are caught by inspecting the uploaded artifacts
+# and comparing criterion baselines across scheduled runs.
+#
+# TREND-NOT-GATE POLICY (Decision Log D20):
+# The benches that hard-assert in-code (index-size < 100MB in indexing.rs; hash-1K < 500ms in
+# hashing_bench.rs) will fail the job naturally if their budget breaks — that is correct and
+# desired. All machine-variable timings (cold-index, query latency, incremental re-index) are
+# recorded via the uploaded criterion artifact and are NOT asserted in CI. In particular:
+#   - The cold-index 10K-LOC budget (< 5s) is MISSED on this machine (6.04s p50, D20) and is
+#     tracked-not-asserted; a hard CI assert here would permanently break the job. D20 defers
+#     this to a v0.1.x batching optimization slice.
+#   - All other machine-variable timings pass with margin but are still tracked, not asserted,
+#     because absolute ms thresholds are fragile across CI runner generations and OSes.
+# See benches/CLAUDE.md §M10.1 (assertion policy) for the full rationale.
+#
+# CACHING: mandatory — rusqlite `bundled` and the tree-sitter grammars compile C from source.
+# A cold build can take several minutes; caching brings it to seconds. Same key pattern as ci.yml.
+#
+# SINGLE OS: ubuntu-latest only. Cross-OS bench noise (Windows vs Linux file I/O overhead,
+# temp-dir latency, etc.) adds no signal for trend tracking and wastes CI minutes. The real
+# cold-index numbers on Linux will differ from the Windows 11 M10.1 measurements recorded in
+# benches/CLAUDE.md — those are machine-specific baselines, not universal thresholds.
+
+name: Bench
+
+on:
+  schedule:
+    # Weekly on Monday at 02:00 UTC — low-traffic time, avoids GitHub Actions peak load.
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+# Cancel a superseded scheduled run (e.g. a second dispatch while the first is still running).
+concurrency:
+  group: bench-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  bench:
+    name: criterion benches (trend-tracking)
+    runs-on: ubuntu-latest
+    # Cold-index 100K-LOC bench can take several minutes per iteration; criterion runs 10 samples.
+    # 60 minutes is a generous ceiling that covers all three benches end-to-end without hanging
+    # the runner indefinitely if a bench regresses badly.
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Honors rust-toolchain.toml (channel 1.85.0 + rustfmt + clippy components).
+      # Mirrors the toolchain install in ci.yml exactly.
+      - name: Install Rust toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup component add rustfmt clippy
+
+      # Same cache key pattern as ci.yml: keyed on Cargo.lock + rust-toolchain.toml so a
+      # toolchain or dependency bump busts the cache. rusqlite `bundled` + tree-sitter C
+      # grammars are the expensive parts; caching them is mandatory.
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # Run all three criterion bench harnesses:
+      #   indexing     — cold_index/{500_loc,10k_loc,100k_loc}, incremental/10_files,
+      #                  index_size/100k_loc_db_bytes  (hard assert: index size < 100MB)
+      #   query_bench  — query_latency/query_authenticate_user_100k_loc
+      #   hashing_bench — hash_1k_files/{compute_file_hash,compute_content_hash}_per_file
+      #                   (hard assert: hash-1K total wall-clock < 500ms)
+      #
+      # The two hard asserts (index-size, hash-1K) run as one-shot checks before criterion
+      # sampling and will exit non-zero — failing this job — if their budgets regress. That is
+      # the correct behavior. All timing-based benches are informational; their numbers are
+      # captured in target/criterion/ and uploaded as an artifact below.
+      - name: Run criterion benches
+        run: cargo bench
+
+      # Upload the full criterion output directory so results are inspectable run-over-run.
+      # Criterion writes HTML reports + raw sample JSON under target/criterion/. Comparing the
+      # sample.json files across runs is how p95/p99 trends are tracked (criterion does not
+      # print p95/p99 to stdout; they must be read from the JSON). Retention: 90 days (GitHub
+      # default for artifacts) is sufficient for weekly trend comparison.
+      - name: Upload criterion output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-results-${{ github.run_id }}
+          path: target/criterion/
+          retention-days: 90

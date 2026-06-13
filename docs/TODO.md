@@ -281,8 +281,14 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       gate). Reviewer APPROVE (after JSON-as-single-source fix). 196 tests green.
       - [ ] **R2 follow-up (D21):** expand to real ContextBench-Lite + full 5×~15 micro-suite using
             this scorer; add NDCG@10 → research track R2
-- [ ] **M10.3 CI bench wiring + parity**: `bench.yml` (scheduled + workflow_dispatch, NOT per-PR;
-      cache C compile); confirm `ci.yml` still mirrors local hooks → devops-release
+- [x] **M10.3 CI bench wiring + parity** → devops-release. **DONE 2026-06-12.** `.github/workflows/
+      bench.yml` authored: `schedule` (weekly cron `0 2 * * 1`) + `workflow_dispatch` only (NOT
+      per-PR), ubuntu-latest, ci.yml-identical cargo caching (rusqlite bundled + tree-sitter C
+      compile), 60-min timeout, uploads `target/criterion/` artifact (`if: always()`). Trend-not-gate
+      per **D20**: in-code hard asserts (index size, hash 1K) fail the job naturally; machine-variable
+      timings (cold-index incl. the 10K miss, query latency, incremental) are tracked-not-asserted.
+      `ci.yml` confirmed UNCHANGED + still mirrors local hooks (fmt --check / clippy --all-targets -D
+      warnings / test --all). `.github/CLAUDE.md` updated. Reviewer APPROVE (no findings).
 - [ ] **M10.4 release v0.1.0 — STAGED, human-gated**: author `release.yml`; confirm `Cargo.toml`
       0.1.0 + crates.io metadata (fix placeholder `repository` URL); CHANGELOG / README quickstart /
       `CLAUDE_CODE_SETUP.md` / `CONTRIBUTING.md` / `LICENSE`; LOCAL DRY RUN (`cargo publish
