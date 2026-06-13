@@ -81,13 +81,23 @@ A milestone is *done* only when its exit criteria are met under the Definition o
   four gates clean (Rust 1.85). Decisions: `LANGUAGE_TYPESCRIPT` (`.tsx` deferred); interfaces/type
   aliases not emitted; no enum/dep change. Brief: `.claude/briefs/BRIEF-M9-typescript-go.md`.
 
-### M10 — Benchmarks + Release
+### M10 — Benchmarks + Release  · **M10.1–M10.3 DONE 2026-06-12 · M10.4 STAGED (publish human-gated)** (M10.1 92fe491 · M10.2 5650596 · M10.3 9ceb324 · M10.4 cf5a3d3)
 - **Work**: criterion suite vs all systems budgets; **Layer-1 retrieval-quality scoring**
   (ContextBench-Lite gold contexts + hand-verified micro-suite — D16 replaces the old
   "5 real tasks" benchmark); release workflow; crates.io publish.
 - **Exit**: systems budgets met (p95<500ms, index<100MB, incr<2s); Layer-1 retrieval metrics
   recorded (the Layer-2 token-economy headline is the research track's R3 exit, not a release
   gate); `v0.1.0` tagged and published; install smoke test passes.
+- **Status** ✓ (budgets/quality/CI met; release staged): query p95 = **0.51 ms**, index = **12.3 MB**,
+  incremental = **190 ms**, cold-100K = **13.5 s**, hash 1K = **459 ms** — all PASS; **cold-10K = 6.04 s
+  vs <5 s MISS** (tracked, **D20**, v0.1.x txn-batching, not a release blocker). Layer-1 scoring shipped
+  as a 15-query offline proxy (**D21**; keyword Recall@10=1.000, semantic=0.000 = expected BM25 gap, D1).
+  EXPLAIN QUERY PLAN baseline captured (FTS5 index used, no full scan). `bench.yml` (scheduled) + `release.yml`
+  (fires only on human-pushed `v*` tag) authored; **196 tests green**, all four gates clean (Rust 1.85).
+  **NOT yet met (the release gate itself):** `v0.1.0` is **not tagged/published** — publish is human-gated and
+  staged behind 4 pre-publish steps (crates.io `codecache` name conflict, real repository URL,
+  `CARGO_REGISTRY_TOKEN`, tag push). Reviewer APPROVED all four slices (M10.1/M10.2/M10.4 one BLOCK→fix→APPROVE
+  each). Brief: `.claude/briefs/BRIEF-M10-benchmarks-release.md`.
 
 ---
 

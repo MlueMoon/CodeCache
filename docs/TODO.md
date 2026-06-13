@@ -261,7 +261,7 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       **190 ms** (< 2 s ✅), cold 100K = **13.54 s** (< 30 s ✅), hash 1K = **459 ms** (< 500 ms ✅),
       cold 10K = **6.04 s** (< 5 s ❌ **MISS — tracked, Decision Log D20**; not a release blocker;
       v0.1.x transaction-batching follow-up). Numbers + assertion policy in `benches/CLAUDE.md`.
-      Reviewer APPROVE (after doc-update). Commit: (see OUTCOME in brief).
+      Reviewer APPROVE (after doc-update). Commit: `92fe491`.
       - [x] **EXPLAIN QUERY PLAN baseline** for the §6 `SEARCH` SQL (carried from M1 + M6.4) —
             captured against a **persistent** fixture DB via `examples/explain_query_plan.rs`. Plan:
             `SCAN symbols VIRTUAL TABLE INDEX 0:M13` (FTS5 index used, no full scan) + bounded
