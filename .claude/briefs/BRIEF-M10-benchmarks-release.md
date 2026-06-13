@@ -1033,7 +1033,8 @@ human-gated and out of scope for this slice.
   `[[bin]]` + clap name); (2) set the real `repository` URL in `Cargo.toml` (placeholder
   `github.com/EunHo-Lee/codecache`); (3) set the `CARGO_REGISTRY_TOKEN` repo secret; (4)
   `git push` the branch + `git tag v0.1.0 && git push origin v0.1.0` → triggers `release.yml`.
-- **Commit:** (filled at commit) — "M10.4: stage v0.1.0 release …". **Slice STAGED.**
+- **Commit:** `cf5a3d3` — "M10.4: stage v0.1.0 release (workflows, license, docs) — NOT published".
+  Local-only; `git tag --list` empty; nothing pushed/published. **Slice STAGED.**
 
 ---
 
