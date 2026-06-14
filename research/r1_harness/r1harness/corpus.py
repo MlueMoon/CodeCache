@@ -19,11 +19,7 @@ from pathlib import Path
 
 # tests/fixtures/retrieval_quality/micro_suite.json relative to the repo root.
 DEFAULT_MICRO_SUITE = (
-    Path(__file__).resolve().parents[3]
-    / "tests"
-    / "fixtures"
-    / "retrieval_quality"
-    / "micro_suite.json"
+    Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "retrieval_quality" / "micro_suite.json"
 )
 
 

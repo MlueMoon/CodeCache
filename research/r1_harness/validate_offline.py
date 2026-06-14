@@ -45,8 +45,10 @@ def main() -> int:
     print(f"\n=== R1 offline validation — task {task.task_id!r}: {task.query!r} ===")
     print(f"gold file = {sorted(task.gold_files)}, gold block = {sorted(task.gold_blocks)}")
     print(f"binary    = {report['binary']}\n")
-    print(f"{'arm':4} {'R@1 file':>9} {'R@1 blk':>8} {'F1@10 blk':>10} "
-          f"{'turns→cov':>10} {'tok→cov':>9} {'tot tok':>8}  surfaced(top blocks)")
+    print(
+        f"{'arm':4} {'R@1 file':>9} {'R@1 blk':>8} {'F1@10 blk':>10} "
+        f"{'turns→cov':>10} {'tok→cov':>9} {'tot tok':>8}  surfaced(top blocks)"
+    )
     ok = True
     for name in ("A0", "A1", "A4"):
         a = report["arms"][name]
@@ -54,8 +56,10 @@ def main() -> int:
         at10 = a["layer1"]["@10"]
         l2 = a["layer2"]
         top = ", ".join(f"{f}:{s}" for f, s in a["surfaced_blocks"][:2])
-        print(f"{name:4} {at1['recall_file']:9.2f} {at1['recall_block']:8.2f} {at10['f1_block']:10.2f} "
-              f"{str(l2['turns_to_coverage']):>10} {str(l2['tokens_to_coverage']):>9} {l2['total_tokens']:8d}  {top}")
+        print(
+            f"{name:4} {at1['recall_file']:9.2f} {at1['recall_block']:8.2f} {at10['f1_block']:10.2f} "
+            f"{str(l2['turns_to_coverage']):>10} {str(l2['tokens_to_coverage']):>9} {l2['total_tokens']:8d}  {top}"
+        )
         # plumbing assertion: every arm must surface the gold block somewhere in its trajectory
         if at10["recall_block"] < 1.0:
             ok = False

@@ -76,7 +76,9 @@ def test_tokens_to_coverage_sums_until_covered(tmp_path):
     logger = TrajectoryLogger(path, _meta())
     gold = {("a.py", "f")}
     logger.log_turn("t1", "bash", "...", prompt_tokens=100, completion_tokens=20, blocks_surfaced=[("x.py", "g")])
-    logger.log_turn("t2", "codecache_query", "...", prompt_tokens=50, completion_tokens=10, blocks_surfaced=[("a.py", "f")])
+    logger.log_turn(
+        "t2", "codecache_query", "...", prompt_tokens=50, completion_tokens=10, blocks_surfaced=[("a.py", "f")]
+    )
     logger.log_turn("t3", "submit", "...", prompt_tokens=999, completion_tokens=999)
     _, turns = read_trajectory(path)
     # covered at turn 2: 100+20+50+10 = 180 ; turn 3 tokens excluded

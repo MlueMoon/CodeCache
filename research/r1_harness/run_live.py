@@ -86,7 +86,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Live R1 A0/A1/A4 run against a local Ollama model.")
     ap.add_argument("--model", default="ollama_chat/qwen2.5:7b", help="litellm model id (Ollama).")
     ap.add_argument(
-        "--model-class", default="litellm", choices=["litellm", "litellm_textbased"],
+        "--model-class",
+        default="litellm",
+        choices=["litellm", "litellm_textbased"],
         help="litellm = native tool-calling (qwen2.5); litellm_textbased = bash-block parsing (llama3/phi3).",
     )
     ap.add_argument("--steps", type=int, default=8, help="per-arm step budget (bounds the live loop).")
@@ -116,10 +118,17 @@ def main() -> int:
     protocol = TEXTBASED_PROTOCOL if args.model_class == "litellm_textbased" else TOOLCALL_PROTOCOL
     factory = build_live_factory(args.model, args.model_class, args.temperature)
     report = run_all(
-        task, arms, runs_dir, factory, binary=binary,
-        step_limit=args.steps, wall_time_limit_seconds=args.wall,
-        model_label=args.model, temperature=args.temperature,
-        action_protocol=protocol, continue_on_error=True,
+        task,
+        arms,
+        runs_dir,
+        factory,
+        binary=binary,
+        step_limit=args.steps,
+        wall_time_limit_seconds=args.wall,
+        model_label=args.model,
+        temperature=args.temperature,
+        action_protocol=protocol,
+        continue_on_error=True,
     )
     report["model"] = args.model
     report["model_class"] = args.model_class
@@ -145,13 +154,12 @@ def main() -> int:
     print(f"\nreport:       {runs_dir / 'report.json'}")
     print("trajectories: runs/live/<arm>/trajectory.jsonl  (+ mini_trajectory.json = full message log)")
     covered = [
-        n for n in ("A0", "A1", "A4")
-        if "error" not in report["arms"][n]
-        and report["arms"][n]["layer1"]["@10"]["recall_block"] >= 1.0
+        n
+        for n in ("A0", "A1", "A4")
+        if "error" not in report["arms"][n] and report["arms"][n]["layer1"]["@10"]["recall_block"] >= 1.0
     ]
     errored = [n for n in ("A0", "A1", "A4") if "error" in report["arms"][n]]
-    print(f"\ngold block covered by: {covered or 'none'}"
-          + (f"   |   arm errors: {errored}" if errored else ""))
+    print(f"\ngold block covered by: {covered or 'none'}" + (f"   |   arm errors: {errored}" if errored else ""))
     print("(Observation of one live run — NOT an arm-winner claim; that is R3.)")
     return 0
 

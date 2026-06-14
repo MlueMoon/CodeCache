@@ -1,7 +1,5 @@
 """Unit tests for the surfaced-items extractor (pure; no agent/binary)."""
 
-from pathlib import Path
-
 from r1harness.extract import extract_surfaced, is_codecache_query
 
 REPO_FILES = {"src/auth/authenticate.py", "src/auth/session.py"}

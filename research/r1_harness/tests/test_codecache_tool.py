@@ -6,13 +6,12 @@ against the real binary is verified separately (see README "Running").
 """
 
 import json
-from pathlib import Path
 
 from r1harness.codecache_tool import normalize_path, parse_query_json
 
 
 def test_normalize_absolute_path_under_repo(tmp_path):
-    abs_fp = (tmp_path / "src" / "auth" / "authenticate.py")
+    abs_fp = tmp_path / "src" / "auth" / "authenticate.py"
     abs_fp.parent.mkdir(parents=True)
     abs_fp.write_text("x", encoding="utf-8")
     assert normalize_path(str(abs_fp), tmp_path) == "src/auth/authenticate.py"
@@ -34,12 +33,30 @@ def test_parse_query_json_dedups_files_keeps_block_order(tmp_path):
         "total_results": 3,
         "total_tokens": 280,
         "chunks": [
-            {"symbol_name": "authenticate_user", "file_path": str(tmp_path / "src/auth/authenticate.py"),
-             "symbol_type": "function", "language": "python", "bm25_score": 9.1, "chunk_text": "def authenticate_user(): ..."},
-            {"symbol_name": "verify_password", "file_path": str(tmp_path / "src/auth/authenticate.py"),
-             "symbol_type": "function", "language": "python", "bm25_score": 4.0, "chunk_text": "def verify_password(): ..."},
-            {"symbol_name": "generate_session_token", "file_path": str(tmp_path / "src/auth/session.py"),
-             "symbol_type": "function", "language": "python", "bm25_score": 2.0, "chunk_text": "def generate_session_token(): ..."},
+            {
+                "symbol_name": "authenticate_user",
+                "file_path": str(tmp_path / "src/auth/authenticate.py"),
+                "symbol_type": "function",
+                "language": "python",
+                "bm25_score": 9.1,
+                "chunk_text": "def authenticate_user(): ...",
+            },
+            {
+                "symbol_name": "verify_password",
+                "file_path": str(tmp_path / "src/auth/authenticate.py"),
+                "symbol_type": "function",
+                "language": "python",
+                "bm25_score": 4.0,
+                "chunk_text": "def verify_password(): ...",
+            },
+            {
+                "symbol_name": "generate_session_token",
+                "file_path": str(tmp_path / "src/auth/session.py"),
+                "symbol_type": "function",
+                "language": "python",
+                "bm25_score": 2.0,
+                "chunk_text": "def generate_session_token(): ...",
+            },
         ],
     }
     qr = parse_query_json(json.dumps(payload), "authenticate user credentials", repo_dir=tmp_path)

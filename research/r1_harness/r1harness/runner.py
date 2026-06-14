@@ -184,8 +184,12 @@ def run_arm(
         idx.index()
 
     meta = TrajectoryMeta(
-        arm=arm.name, task_id=task.task_id, model=model_label, temperature=temperature,
-        corpus_id=task.corpus_id, query=task.query,
+        arm=arm.name,
+        task_id=task.task_id,
+        model=model_label,
+        temperature=temperature,
+        corpus_id=task.corpus_id,
+        query=task.query,
     )
     logger = TrajectoryLogger(arm_dir / "trajectory.jsonl", meta)
 
@@ -213,8 +217,11 @@ def run_arm(
     # Expose the codecache binary only to arms that may use it (A0 stays a clean control).
     env = BashEnvironment(cwd=str(repo), extra_path=binary_dir if uses_index else None)
     agent = LoggingAgent(
-        model, env,
-        traj_logger=logger, repo_files=repo_files, repo_dir=repo,
+        model,
+        env,
+        traj_logger=logger,
+        repo_files=repo_files,
+        repo_dir=repo,
         system_template=SYSTEM_TEMPLATE.format(addendum=arm.prompt_addendum, action_protocol=action_protocol),
         instance_template=INSTANCE_TEMPLATE,
         step_limit=effective_step_limit,
@@ -254,9 +261,17 @@ def run_all(
     for arm in arms:
         try:
             traj = run_arm(
-                arm, task, corpus, runs_dir, binary, model_factory,
-                step_limit=step_limit, wall_time_limit_seconds=wall_time_limit_seconds,
-                model_label=model_label, temperature=temperature, action_protocol=action_protocol,
+                arm,
+                task,
+                corpus,
+                runs_dir,
+                binary,
+                model_factory,
+                step_limit=step_limit,
+                wall_time_limit_seconds=wall_time_limit_seconds,
+                model_label=model_label,
+                temperature=temperature,
+                action_protocol=action_protocol,
             )
             report["arms"][arm.name] = {"description": arm.description, **score_trajectory(traj, task)}
         except Exception as e:  # noqa: BLE001 — surfaced into the report for live robustness

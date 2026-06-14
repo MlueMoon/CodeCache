@@ -26,13 +26,23 @@ def test_repeated_gold_block_does_not_inflate_recall(tmp_path):
     meta = TrajectoryMeta("A0", "auth_q1", "deterministic", 0.0, "auth_module", "authenticate user credentials")
     logger = TrajectoryLogger(path, meta)
     # grep turn surfaces the gold block; cat turn surfaces it AGAIN plus a sibling.
-    logger.log_turn("grep -rn def src", "bash", "...",
-                    files_surfaced=["src/auth/authenticate.py"],
-                    blocks_surfaced=[("src/auth/authenticate.py", "authenticate_user")])
-    logger.log_turn("cat src/auth/authenticate.py", "bash", "...",
-                    files_surfaced=["src/auth/authenticate.py"],
-                    blocks_surfaced=[("src/auth/authenticate.py", "authenticate_user"),
-                                     ("src/auth/authenticate.py", "verify_password")])
+    logger.log_turn(
+        "grep -rn def src",
+        "bash",
+        "...",
+        files_surfaced=["src/auth/authenticate.py"],
+        blocks_surfaced=[("src/auth/authenticate.py", "authenticate_user")],
+    )
+    logger.log_turn(
+        "cat src/auth/authenticate.py",
+        "bash",
+        "...",
+        files_surfaced=["src/auth/authenticate.py"],
+        blocks_surfaced=[
+            ("src/auth/authenticate.py", "authenticate_user"),
+            ("src/auth/authenticate.py", "verify_password"),
+        ],
+    )
 
     result = score_trajectory(path, _task())
     at10 = result["layer1"]["@10"]

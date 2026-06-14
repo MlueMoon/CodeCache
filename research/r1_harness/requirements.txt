@@ -12,3 +12,4 @@ mini-swe-agent==2.4.1
 
 # Dev / test:
 pytest>=8.0
+ruff>=0.15        # lint + format gate for the research tree (ROADMAP D23)

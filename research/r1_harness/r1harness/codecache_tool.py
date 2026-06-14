@@ -43,8 +43,7 @@ def find_codecache_binary(repo_root: Path | None = None) -> Path:
         return Path(on_path)
 
     raise FileNotFoundError(
-        "codecache binary not found. Build it with `cargo build --release`, "
-        "or set $CODECACHE_BIN to its path."
+        "codecache binary not found. Build it with `cargo build --release`, or set $CODECACHE_BIN to its path."
     )
 
 

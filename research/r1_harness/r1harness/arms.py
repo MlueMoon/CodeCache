@@ -46,7 +46,7 @@ A1 = Arm(
     prompt_addendum=(
         "Besides the standard shell tools, this repo has a code index exposed as a shell "
         "command. Call the bash tool with:\n"
-        "    codecache query \"<your search terms>\" --format json\n"
+        '    codecache query "<your search terms>" --format json\n'
         "and it returns the most relevant symbols (name, file, line range, body) ranked by "
         "relevance as JSON. Prefer it over blind grep for locating where functionality lives."
     ),
