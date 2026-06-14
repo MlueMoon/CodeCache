@@ -44,6 +44,14 @@ def test_cat_attributes_shown_defs_to_the_file():
     assert ("src/auth/authenticate.py", "verify_password") in blocks
 
 
+def test_grep_dot_slash_prefix_is_normalised():
+    # `grep -rn pat .` prefixes hits with ./ — must match the gold/cat spelling, not split the file.
+    obs = "./src/auth/authenticate.py:1:def authenticate_user(username, password):\n"
+    files, blocks = extract_surfaced('grep -rn "authenticate" .', obs, REPO_FILES)
+    assert files == ["src/auth/authenticate.py"]
+    assert blocks == [("src/auth/authenticate.py", "authenticate_user")]
+
+
 def test_unrelated_command_surfaces_nothing():
     files, blocks = extract_surfaced("ls -la", "total 0\n", REPO_FILES)
     assert files == []

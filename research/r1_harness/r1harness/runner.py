@@ -28,11 +28,30 @@ from .extract import extract_surfaced, is_codecache_query
 from .report import score_trajectory
 from .trajectory import TrajectoryLogger, TrajectoryMeta
 
+#: How the model is told to emit an action, per interaction mode. Native tool-calling
+#: (``litellm``) vs. text bash-blocks (``litellm_textbased`` — robust for small local
+#: models like qwen2.5/llama3/phi3 that flake on Ollama native tool calls).
+TOOLCALL_PROTOCOL = (
+    "Act ONLY by calling the bash tool with exactly one shell command per step; never reply "
+    "with prose or an empty message. Read each command's output, then choose the next command."
+)
+TEXTBASED_PROTOCOL = (
+    "Act by writing EXACTLY ONE shell command per step inside a fenced block labelled "
+    "mswea_bash_command, with nothing after it, like:\n"
+    "```mswea_bash_command\n"
+    "grep -rn pattern .\n"
+    "```\n"
+    "Read the command's output, then issue the next command the same way."
+)
+
 SYSTEM_TEMPLATE = (
     "You are a code-search assistant working in a repository. Your job is to locate the "
-    "code relevant to the user's query. {addendum}\n"
-    "When you have found the relevant code, finish by running a command whose FIRST output "
-    "line is exactly COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT followed by your answer."
+    "code relevant to the user's query.\n"
+    "{action_protocol}\n"
+    "{addendum}\n"
+    "When you have found the relevant code, finish with a command whose FIRST output line is "
+    "exactly COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT followed by your answer "
+    "(for example: echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT; echo <where the code lives>)."
 )
 
 INSTANCE_TEMPLATE = "Query: {{task}}\n{% if injected_context %}\nRetrieved context:\n{{injected_context}}\n{% endif %}"
@@ -125,24 +144,47 @@ def _format_topk(qr, k: int = 5) -> str:
     return "\n".join(lines)
 
 
-def run_arm(arm: Arm, task: Task, corpus: Corpus, runs_dir: Path, binary: Path, model_factory) -> Path:
-    """Run one arm; returns the trajectory path. ``model_factory(n_steps)`` builds the model."""
+def run_arm(
+    arm: Arm,
+    task: Task,
+    corpus: Corpus,
+    runs_dir: Path,
+    binary: Path,
+    model_factory,
+    *,
+    step_limit: int | None = None,
+    wall_time_limit_seconds: int = 0,
+    model_label: str = "deterministic",
+    temperature: float = 0.0,
+    action_protocol: str = TOOLCALL_PROTOCOL,
+) -> Path:
+    """Run one arm; returns the trajectory path.
+
+    Two modes, selected by ``step_limit``:
+
+    * ``None`` (default) — *deterministic*: ``model_factory`` is handed the scripted
+      :func:`scripted_outputs` and the step budget is exactly the script length.
+    * an ``int`` — *live*: the model decides its own actions (``model_factory`` ignores
+      its argument); ``step_limit`` bounds the loop and ``wall_time_limit_seconds`` is a
+      wall-clock safety net.
+    """
     arm_dir = runs_dir / arm.name
     repo = arm_dir / "repo"
     repo.mkdir(parents=True, exist_ok=True)
     written = materialize(corpus, repo)
     repo_files = {p.relative_to(repo).as_posix() for p in written}
     binary_dir = str(Path(binary).parent)
+    uses_index = arm.codecache_in_loop or arm.oneshot_inject
 
     injected = ""
     idx = None
-    if arm.codecache_in_loop or arm.oneshot_inject:
+    if uses_index:
         idx = CodeCacheIndex(repo, binary)
         idx.init()
         idx.index()
 
     meta = TrajectoryMeta(
-        arm=arm.name, task_id=task.task_id, model="deterministic", temperature=0.0,
+        arm=arm.name, task_id=task.task_id, model=model_label, temperature=temperature,
         corpus_id=task.corpus_id, query=task.query,
     )
     logger = TrajectoryLogger(arm_dir / "trajectory.jsonl", meta)
@@ -160,30 +202,67 @@ def run_arm(arm: Arm, task: Task, corpus: Corpus, runs_dir: Path, binary: Path, 
             blocks_surfaced=qr.blocks,
         )
 
-    outputs = scripted_outputs(arm, task)
-    model = model_factory(outputs)
-    env = BashEnvironment(cwd=str(repo), extra_path=binary_dir)
+    if step_limit is None:  # deterministic: scripted actions, budget = script length
+        outputs = scripted_outputs(arm, task)
+        model = model_factory(outputs)
+        effective_step_limit = len(outputs) + 1
+    else:  # live: the model drives; fixed step budget + wall-clock safety net
+        model = model_factory(None)
+        effective_step_limit = step_limit
+
+    # Expose the codecache binary only to arms that may use it (A0 stays a clean control).
+    env = BashEnvironment(cwd=str(repo), extra_path=binary_dir if uses_index else None)
     agent = LoggingAgent(
         model, env,
         traj_logger=logger, repo_files=repo_files, repo_dir=repo,
-        system_template=SYSTEM_TEMPLATE.format(addendum=arm.prompt_addendum),
+        system_template=SYSTEM_TEMPLATE.format(addendum=arm.prompt_addendum, action_protocol=action_protocol),
         instance_template=INSTANCE_TEMPLATE,
-        step_limit=len(outputs) + 1,
+        step_limit=effective_step_limit,
         cost_limit=0,
+        wall_time_limit_seconds=wall_time_limit_seconds,
         output_path=arm_dir / "mini_trajectory.json",
     )
     agent.run(task=task.query, injected_context=injected)
     return arm_dir / "trajectory.jsonl"
 
 
-def run_all(task: Task, arms: list[Arm], runs_dir: Path, model_factory, binary: Path | None = None) -> dict:
-    """Run every arm on ``task`` and return the assembled metrics report."""
+def run_all(
+    task: Task,
+    arms: list[Arm],
+    runs_dir: Path,
+    model_factory,
+    binary: Path | None = None,
+    *,
+    step_limit: int | None = None,
+    wall_time_limit_seconds: int = 0,
+    model_label: str = "deterministic",
+    temperature: float = 0.0,
+    action_protocol: str = TOOLCALL_PROTOCOL,
+    continue_on_error: bool = False,
+) -> dict:
+    """Run every arm on ``task`` and return the assembled metrics report.
+
+    The live keyword arguments (``step_limit`` / ``wall_time_limit_seconds`` /
+    ``model_label`` / ``temperature``) pass straight through to :func:`run_arm`; their
+    defaults preserve the deterministic behaviour. With ``continue_on_error`` a single
+    arm raising (e.g. a flaky live model) records an ``error`` for that arm instead of
+    aborting the whole sweep.
+    """
     binary = binary or find_codecache_binary()
     corpus = load_corpus(task.corpus_id)
     report: dict = {"task": asdict(_task_summary(task)), "binary": str(binary), "arms": {}}
     for arm in arms:
-        traj = run_arm(arm, task, corpus, runs_dir, binary, model_factory)
-        report["arms"][arm.name] = {"description": arm.description, **score_trajectory(traj, task)}
+        try:
+            traj = run_arm(
+                arm, task, corpus, runs_dir, binary, model_factory,
+                step_limit=step_limit, wall_time_limit_seconds=wall_time_limit_seconds,
+                model_label=model_label, temperature=temperature, action_protocol=action_protocol,
+            )
+            report["arms"][arm.name] = {"description": arm.description, **score_trajectory(traj, task)}
+        except Exception as e:  # noqa: BLE001 — surfaced into the report for live robustness
+            if not continue_on_error:
+                raise
+            report["arms"][arm.name] = {"description": arm.description, "error": f"{type(e).__name__}: {e}"}
     return report
 
 

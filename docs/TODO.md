@@ -305,8 +305,8 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
         `github.com/EunHo-Lee/codecache`); (3) set the `CARGO_REGISTRY_TOKEN` repo secret; (4) push
         the `v0.1.0` tag to trigger `release.yml`.
 
-## Research track (R1–R4, post-M8; M9 can interleave) · spec: [`../project_overview.md`](../project_overview.md) §5–§6 · ROADMAP "Research track"
-- [~] **R1 harness** (D22 ratified 2026-06-13; main session drives): fork mini-SWE-agent (Python, MIT);
+## Research track (R1–R4, post-M8; M9 can interleave) · spec: [`../project_overview.md`](../project_overview.md) §5–§6 · ROADMAP "Research trcheck-on-stop.ps1ack"
+- [x] **R1 harness** (D22 ratified 2026-06-13; main session drives): fork mini-SWE-agent (Python, MIT);
       out-of-crate under `research/r1_harness/`; process boundary to the Rust binary (no FFI, no new crate
       dep). Exit = one gold-labeled task end-to-end in arms A0/A1/A4 + a metrics report computed from the
       trajectory logs (Layer-1 Recall@k/Precision@k/F1 file+block via a Python port of the M10.2 scorer
@@ -328,11 +328,20 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       - [x] **End-to-end offline validated via DeterministicModel** (`validate_offline.py`): A0/A1/A4 each
             run mini's loop on `auth_q1`, log a trajectory, cover the gold block (Recall@1 file+block=1.0);
             `runs/report.json` has per-arm Layer-1 (R/P/F1 @1/5/10 file+block) + Layer-2 (tokens +
-            tokens/turns-to-coverage). **38 pure pytest tests green** (base python; runner tests need the
+            tokens/turns-to-coverage). **39 pure pytest tests green** (base python; runner tests need the
             venv). Fixed a dedup bug (repeated cross-turn gold hit inflated recall>1.0). **R1 exit met
             offline — no arm-winner claim (that is R3).**
-      - [ ] (gated) live-model run — needs a model-backend decision (free/local via litellm vs a paid key;
-            ~cents for one task, NOT the $1K R3 spend). DeterministicModel is a drop-in swap for a real model.
+      - [x] **Live-model run via Ollama (zero-cost, local)** — `run_live.py` swaps DeterministicModel for a
+            litellm→Ollama model (`run_arm` gained a live mode: model drives, fixed step budget + wall-clock
+            net, A0 kept off the codecache PATH as a clean control; `run_all` gained per-arm error isolation).
+            On `qwen2.5:7b` @ temp 0, **all three arms cover the gold block LIVE** (A0/A1/A4 Recall@1
+            file+block = 1.0): A1's `codecache query` returned `authenticate_user` at **rank 1 on turn 1**;
+            A0 reached it in 3 grep turns (literal-phrase → keyword); A4 via one-shot injection. **Finding:**
+            Ollama **native** tool-calling is too fragile for this small model on the in-loop arm (empty
+            responses → RepeatedFormatError, 0 actions) — the **text-based** model class
+            (`--model-class litellm_textbased`, the mode llama3/phi3 also need) drives every arm reliably.
+            Also fixed a measurement bug (grep `./`-prefix split one file into two retrieved entries →
+            corrupted Recall@1; +regression test). **R1 exit now met LIVE — no arm-winner claim (that is R3).**
 - [ ] **R2 offline ablations**: Layer-1 sweeps (chunking × ranking × enrichment) on
       ContextBench-Lite + RepoEval slice; reproduce published BM25 baselines → perf + specialist
 - [ ] **R3 agent-in-loop study**: full A0–A5 matrix on 30–50 tasks → promote winners to 100;

@@ -44,11 +44,11 @@ A1 = Arm(
     codecache_in_loop=True,
     oneshot_inject=False,
     prompt_addendum=(
-        "In addition to standard shell tools, a code index is available. Run\n"
+        "Besides the standard shell tools, this repo has a code index exposed as a shell "
+        "command. Call the bash tool with:\n"
         "    codecache query \"<your search terms>\" --format json\n"
-        "to retrieve the most relevant symbols (name, file, line range, body) "
-        "ranked by relevance, instead of grepping blindly. Prefer it for "
-        "locating where functionality lives."
+        "and it returns the most relevant symbols (name, file, line range, body) ranked by "
+        "relevance as JSON. Prefer it over blind grep for locating where functionality lives."
     ),
     notes="project_overview §5.3 arm A1",
 )

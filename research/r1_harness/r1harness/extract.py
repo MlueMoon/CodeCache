@@ -35,6 +35,17 @@ def is_codecache_query(command: str) -> bool:
     return "codecache" in c and " query" in c and "--format" in c and "json" in c
 
 
+def _norm_grep_path(raw: str) -> str:
+    """Normalise a grep-emitted path to the gold / cat / index spelling.
+
+    ``grep -rn <pat> .`` prefixes every hit with ``./`` (e.g. ``./src/app.py``) while
+    ``cat`` and the index emit clean repo-relative paths (``src/app.py``). Left as-is,
+    the same file is counted as two distinct retrieved entries, which corrupts the
+    rank-sensitive metrics (Recall@1 and turns/tokens-to-coverage)."""
+    p = raw.replace("\\", "/")
+    return p[2:] if p.startswith("./") else p
+
+
 def _dedup(seq):
     seen, out = set(), []
     for x in seq:
@@ -71,7 +82,7 @@ def extract_surfaced(
 
     # 2) grep-style `path:line:` lines — precise file + (file, symbol) on def/class lines.
     for m in _GREP_DEF_RE.finditer(observation):
-        path = m.group(1).replace("\\", "/")
+        path = _norm_grep_path(m.group(1))
         blocks.append((path, m.group(2)))
         if path not in files:
             files.append(path)

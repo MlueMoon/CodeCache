@@ -484,6 +484,18 @@ result is itself publishable (§4.3); the product kill criterion is an **R3** de
 API/benchmark access; confirming CodeRAG-Bench + SWE-bench Verified licenses; the R3 model choice.
 Owner: manager (proposal + spike) → main session (R1 build). **Ratified 2026-06-13; R1 build underway.**
 
+**R1 DONE (2026-06-13).** Harness built and run end-to-end. *Offline* (DeterministicModel, byte-stable):
+A0/A1/A4 each drive mini's loop on `auth_q1` and cover the gold block. *Live* (zero-cost, local Ollama
+`qwen2.5:7b`, temp 0): **all three arms cover the gold block** — A1's in-loop `codecache query` returned
+the gold symbol `authenticate_user` at **rank 1 on turn 1**. Two findings worth carrying into R2/R3:
+(1) Ollama **native** tool-calling is too fragile for this 7B model on the in-loop arm (empty responses →
+`RepeatedFormatError`, zero actions); the **text-based** model class drives all arms reliably and is also
+what the no-native-tools models (llama3/phi3) need — selectable via `run_live.py --model-class
+{litellm|litellm_textbased}`. (2) Fixed a measurement bug — grep's `./` path prefix double-counted a file,
+corrupting Recall@1 (+regression test; pytest 38→39). **No arm-winner claim — that is an R3 determination.**
+Live trajectories + reports under `research/r1_harness/runs/` (gitignored); the native-vs-text-based runs
+are preserved locally as `runs/live_run{1,2,3}_*`.
+
 ---
 
 ## Deferred to v0.2+ (from project_plan §9.2)

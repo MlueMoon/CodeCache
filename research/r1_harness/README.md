@@ -28,9 +28,15 @@ research/r1_harness/
 │   ├── trajectory.py      # JSONL turn-log schema + Layer-2 (tokens/turns-to-coverage)
 │   ├── corpus.py          # materialise a micro-suite corpus to a real on-disk repo
 │   ├── codecache_tool.py  # adapter: shell out to the codecache binary, parse §6.4.2 JSON
+│   ├── extract.py         # action+observation → surfaced files/blocks (A1 JSON exact; A0 grep/cat heuristic)
+│   ├── bash_env.py        # portable `bash -c` environment for mini (not cmd.exe on Windows)
+│   ├── runner.py          # LoggingAgent over mini's DefaultAgent; deterministic OR live mode
+│   ├── report.py          # pure trajectory scoring (mini-free)
 │   └── arms.py            # A0/A1/A4 + Task definitions
 ├── tasks/auth_q1.json     # the R1 single task (gold mirrors the M10.2 fixture verbatim)
-├── tests/                 # pytest: scorer (mirrors retrieval_quality.rs), trajectory, corpus
+├── validate_offline.py    # run A0/A1/A4 offline (DeterministicModel) → runs/report.json
+├── run_live.py            # run A0/A1/A4 against a live local model (Ollama via litellm) → runs/live/
+├── tests/                 # pytest: scorer (mirrors retrieval_quality.rs), trajectory, corpus, extractor, …
 ├── requirements.txt       # mini-swe-agent==2.4.1 (runner only) + pytest
 └── pyproject.toml
 ```
@@ -49,13 +55,26 @@ python -m pytest            # scorer + trajectory + corpus unit tests
 The `codecache_tool` adapter is exercised against the **built binary** (`cargo build --release`
 first, or set `$CODECACHE_BIN`).
 
+## Running end-to-end (needs the mini-swe-agent venv — see `docs/TESTING_AND_USAGE.md` §3)
+```bash
+# Offline — mini's DeterministicModel; no API, no network:
+PYTHONUTF8=1 python validate_offline.py                          # A0/A1/A4 → runs/report.json
+
+# Live, zero-cost — a local Ollama model (ollama pull qwen2.5:7b):
+PYTHONUTF8=1 python run_live.py                                  # qwen2.5:7b, native tool-calling
+PYTHONUTF8=1 python run_live.py --model-class litellm_textbased  # bash-block mode (robust; llama3/phi3)
+```
+
 ## Status
-- **Done (verified offline):** scorer (+ tests), trajectory schema + Layer-2 extraction (+ tests),
-  corpus materialisation (+ tests), the `codecache` tool adapter, A0/A1/A4 + task definitions.
-- **Next:** `runner.py` — build mini-SWE-agent's loop with the per-arm tool surface and write a
-  trajectory; validate end-to-end **offline** via mini's `DeterministicModel` (no API).
-- **Gated:** a live-model run needs a model-backend decision (a free/local model via litellm, or a
-  paid key). The ~$1K **R3** API spend is a separate downstream gate — **not** authorised by R1.
+- **R1 DONE (2026-06-13)** — exit met **offline and live**. Offline (`validate_offline.py`,
+  `DeterministicModel`): A0/A1/A4 each drive mini's loop on `auth_q1`, log a trajectory, and cover the
+  gold block. Live (`run_live.py`, local Ollama `qwen2.5:7b`, temp 0, **zero cost**): all three arms cover
+  the gold block — A1's in-loop `codecache query` returns the gold symbol at **rank 1 on turn 1**.
+- **Findings (carried to R2/R3):** Ollama *native* tool-calling is fragile for this 7B model on the
+  in-loop arm (empty responses → `RepeatedFormatError`); use `--model-class litellm_textbased` (the mode
+  llama3/phi3 also need). Fixed a grep `./`-prefix measurement bug (+regression test; pytest 38→39).
+- **Gated (separate, downstream):** the ~$1K **R3** API spend and any paid benchmark/API access — **not**
+  authorised by R1.
 
 ## Scope discipline (`project_overview.md` §7)
 R1 builds the outcome-agnostic *apparatus* only. **No arm-winner claim is made here** — which

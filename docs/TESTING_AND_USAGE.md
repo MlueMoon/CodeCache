@@ -156,7 +156,7 @@ turns-to-coverage) from trajectory logs.
 The scorer / trajectory / corpus / extractor tests need only the stdlib + pytest:
 ```bash
 cd research/r1_harness
-python -m pytest          # 38 tests: scorer (mirrors retrieval_quality.rs), trajectory,
+python -m pytest          # 39 tests: scorer (mirrors retrieval_quality.rs), trajectory,
                           # corpus, codecache_tool parsing, extractor, scoring regression
 ```
 The `codecache_tool` and end-to-end paths use the built binary (build it first, or set
@@ -197,15 +197,43 @@ from `tasks/auth_q1.json`, whose gold mirrors `tests/fixtures/retrieval_quality/
 | `r1harness/codecache_tool.py` | Shell out to the binary; parse §6.4.2 JSON; relativise paths to gold. |
 | `r1harness/bash_env.py` | Portable `bash -c` environment for mini (not cmd.exe on Windows). |
 | `r1harness/extract.py` | Map an action+observation → surfaced files/blocks (A1 JSON exact; A0 grep/cat heuristic). |
-| `r1harness/runner.py` | `LoggingAgent` over mini's `DefaultAgent`; runs an arm, logs the trajectory. |
+| `r1harness/runner.py` | `LoggingAgent` over mini's `DefaultAgent`; runs an arm (deterministic *or* live), logs the trajectory. |
 | `r1harness/report.py` | Pure scoring of a trajectory (mini-free). |
-| `validate_offline.py` | Runs A0/A1/A4 on the task and writes the report. |
+| `validate_offline.py` | Runs A0/A1/A4 on the task with `DeterministicModel` (offline) and writes the report. |
+| `run_live.py` | Runs A0/A1/A4 against a **live local model** (Ollama via litellm); writes `runs/live/`. |
 
-### 3.4 Live-model run (gated)
-A real agent run swaps mini's `DeterministicModel` for a litellm-backed model — a **free/local
-model** (Ollama/LM Studio/vLLM, no key) or a small paid API model (~cents for one task; this is
-**not** the ~$1K R3 budget, which stays a separate decision). This step is pending a model-backend
-choice and is not wired into `validate_offline.py` yet.
+### 3.4 Live-model run (`run_live.py`, zero-cost via Ollama)
+`run_live.py` runs the **same pipeline** as the offline validator but swaps `DeterministicModel` for a
+real litellm-backed model. The default backend is a **local Ollama** model — no API key, no paid spend
+(this is *not* the ~$1K R3 budget; that stays a separate gate).
+
+**One-time setup** — install [Ollama](https://ollama.com), then pull a small model:
+```bash
+ollama pull qwen2.5:7b      # advertises native tool-calling; also: llama3, phi3 (text-based only)
+```
+Ollama serves on `localhost:11434` automatically. Build the release binary, then run (from
+`research/r1_harness/`):
+```bash
+# qwen2.5:7b via native tool-calling (litellm tools=[bash]):
+PYTHONUTF8=1 C:/ccr1/Scripts/python.exe run_live.py
+
+# text-based mode — the model writes ```mswea_bash_command``` blocks; robust for small models
+# and REQUIRED for models without native tools (llama3, phi3):
+PYTHONUTF8=1 C:/ccr1/Scripts/python.exe run_live.py --model-class litellm_textbased
+PYTHONUTF8=1 C:/ccr1/Scripts/python.exe run_live.py --model ollama_chat/llama3 --model-class litellm_textbased
+```
+Flags: `--model` (litellm id, default `ollama_chat/qwen2.5:7b`), `--model-class`
+(`litellm` native tools | `litellm_textbased`), `--steps` (per-arm budget, default 8), `--wall`
+(per-arm seconds), `--temperature` (default 0.0). The first model call cold-loads the model into Ollama
+(~1 min). Outputs land in `runs/live/` (gitignored): per-arm `trajectory.jsonl` (scored turns) +
+`mini_trajectory.json` (full message log) + `report.json`. The run prints the live Layer-1/Layer-2 table
+side-by-side with the deterministic baseline.
+
+**What to expect (observation, not an arm-winner claim — that is R3).** On `qwen2.5:7b` @ temp 0 all
+three arms cover the gold block: A1's in-loop `codecache query` returns the gold symbol at rank 1 on the
+first turn; A0 finds it after decomposing the query into keywords; A4 via injection. Note: this small
+model is **unreliable under Ollama native tool-calling on the in-loop arm** (it can emit empty responses →
+`RepeatedFormatError`); prefer `--model-class litellm_textbased` for dependable local runs.
 
 ---
 
