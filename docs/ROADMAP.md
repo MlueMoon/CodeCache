@@ -112,7 +112,7 @@ spend (R3). Kill criterion and null-result handling: `project_overview.md` §7.
 | Milestone | Work | Exit criteria |
 |---|---|---|
 | **R1 — Harness** | Minimal agent loop (or mini-SWE-agent fork) with pluggable retrieval tools; trajectory logging; ContextBench gold-context scorer | One task runs end-to-end in A0/A1/A4; metrics computed from logs |
-| **R2 — Offline ablations** | Layer-1 sweeps: chunking × ranking × enrichment on ContextBench-Lite + RepoEval slice | Published BM25 baselines reproduced within tolerance; top configs picked |
+| **R2 — Offline ablations** | Layer-1 sweeps: chunking × ranking × enrichment on **ContextBench-Lite** (RepoEval slice CUT — D27) | Real-corpus Layer-1 ablation over ContextBench-Lite + qualitative CodeRAG-Bench BM25 NDCG@10 = 0.932 reference; top configs picked (**softened from ±0.03 reproduction — D27**) |
 | **R3 — Agent-in-loop study** | Full matrix on 30–50 tasks; promote winners to 100; budget/scale sweeps | RQ1–RQ3 plots with CIs; raw trajectories published |
 | **R4 — Write-up & release** | Preprint + artifact (binary, harness, data); blog distillation; one workshop submission | arXiv live; artifact reproduces the headline figure from a clean machine |
 
@@ -519,6 +519,13 @@ fallback **ContextBench-Lite**, Apache-2.0), AND the ablation table is emitted w
 criterion (proposed: **highest-and-separated beyond the noise floor**; ties reported as ties) naming the
 promoted config(s) — R3's agent-in-loop inputs. Deterministic, reproducible from a clean checkout.
 
+> **EXIT AMENDED by D27 (2026-06-15):** the "reproduce a published BM25 baseline within ±0.03 on a named
+> corpus slice" exit is **dropped** (R2.5b/R2.7 in-repo reproduction CUT — the CodeRAG-Bench RepoEval data is
+> HF-gated and its 20-line-window methodology validates a generic BM25 apparatus, not CodeCache's AST-symbol
+> chunking). **Softened exit:** run the real-corpus Layer-1 ablation over **ContextBench-Lite** (Apache-2.0,
+> R2.5a — DONE) + cite CodeRAG-Bench's published **BM25 NDCG@10 = 0.932** qualitatively (no in-repo
+> reproduction). Next research step = **R2.6** (astchunk/cAST chunker), GATED on the astchunk dep. See D27.
+
 **Reuse vs new.** Reuse the R1 scorer/protocol (Recall/Precision/F1 @k file+block — M10.2 contract, D21), the
 gold schema, `corpus.py`, `codecache_tool.py` (process boundary), `report.py`'s pure-emit pattern. New:
 **NDCG@10**; an **external-corpus loader** mapping published gold → our gold schema (scorer unchanged, D21); a
@@ -677,6 +684,68 @@ ablation, **NOT** a published-number reproduction. **R2.5b (NEXT, separate slice
 is what **R2.7** reproduces the BM25 NDCG@10 against. Owner: manager (this decision + the gate ratification) →
 research-harness-engineer (R2.5a build, then R2.5b). Brief:
 `.claude/briefs/BRIEF-R2.5-external-corpus-loader.md`.
+
+> **SUPERSEDED-IN-PART by D27 (2026-06-15):** R2.5b (the CodeRAG-Bench RepoEval BM25-reproduction loader) is
+> **CUT/de-scoped**. The "Corpus = BOTH" decision stands **only for ContextBench-Lite** (R2.5a, DONE); the
+> CodeRAG-Bench RepoEval half — including the in-repo published-number reproduction — is dropped. R2's exit is
+> softened accordingly (see D27). Only ContextBench-Lite proceeds; CodeRAG-Bench's BM25 NDCG@10 = 0.932 is
+> retained as a **qualitative published reference**, not an in-repo reproduction.
+
+### D27 — De-scope R2.5b (CodeRAG-Bench RepoEval reproduction); soften R2's exit to a real-corpus ablation over ContextBench-Lite + a qualitative 0.932 reference  · **Adopted 2026-06-15 (human-ratified, spike→ratify)** (plan: research track R2; supersedes-in-part D23 exit + D26 "Both corpora" gate) — *overview §5–§7*
+
+> **Spike → human ratify (the D15/D22/D23/D25/D26 pattern), now ratified.** A spike this turn
+> (principal-ml-eval-engineer, main session) verified the facts below; the human ratified the de-scope on
+> 2026-06-15 via gate questions. Pure documentation; zero code, zero spend, product air-gapped unchanged.
+
+**Decision.** **R2.5b (the CodeRAG-Bench RepoEval BM25-reproduction loader) is DE-SCOPED / CUT.** R2's exit
+criterion is **softened**: from D23's *"reproduce a published BM25 baseline within ±0.03 absolute on a named
+corpus slice"* → to *"run the real-corpus Layer-1 ablation over **ContextBench-Lite** (Apache-2.0, R2.5a —
+DONE), and cite CodeRAG-Bench's published **BM25 NDCG@10 = 0.932** qualitatively as a reference number (no
+in-repo reproduction)."* The next research step becomes **R2.6** (astchunk/cAST baseline chunker), which
+remains **GATED on the astchunk PyPI dependency** (D23 gate #3) — **not authorized yet**.
+
+**Rationale (the *why*).** A spike verified three facts that made strict RepoEval reproduction
+low-value/high-friction:
+1. **Methodology mismatch.** CodeRAG-Bench's RepoEval gold is a **20-line code window**, not a symbol; BM25
+   hits 0.932 *because* the query is lexically near that window. Reproducing 0.932 requires replicating
+   **their** 20-line chunking + BM25 — which does **not** exercise CodeCache's **AST-symbol** chunking. So a
+   faithful reproduction validates a generic BM25/scorer apparatus, not CodeCache's retrieval — orthogonal to
+   R2's purpose.
+2. **Gated data.** `code-rag-bench/repoeval` on HF returns **401 (gated — token/terms required)**, unlike the
+   open corpus pools; sourcing it needs either an HF token+terms or a multi-source generate-from-RepoCoder
+   build. Friction not justified by (1).
+3. **Block-scoring mismatch.** RepoEval gold has no symbol names (the same issue as ContextBench), forcing
+   file-level or a chunk-ID proxy.
+
+ContextBench-Lite (R2.5a, DONE, reviewer-APPROVED, commit `ee918d1`) already provides a clean, well-licensed
+real-corpus ablation, so R2 keeps its real-corpus result without the RepoEval cost.
+
+**Verified external facts (cite; do NOT re-derive — confirmed this turn).**
+- **CodeRAG-Bench BM25 NDCG@10 = 0.932 (93.2)** on RepoEval — paper Table 3, arXiv:2406.14497. Retained as a
+  **qualitative published reference**, not an in-repo reproduction.
+- **CodeRAG-Bench data license = CC-BY-SA-4.0** — confirmed via HF Hub API `cardData.license` + `license:`
+  tags + README front-matter across `code-rag-bench/{library-documentation,github-repos,github-repos-python}`
+  (the GitHub repo's missing LICENSE file was a red herring — it governs code, not the HF data). This
+  **closes** the D26/R2.5b "confirm the LICENSE first" open item: license is now known (CC-BY-SA-4.0), and the
+  loader that would have consumed it is cut.
+- **`code-rag-bench/repoeval` is gated (HF 401), not a public packaged dataset**; the org hosts only retrieval
+  *corpus pools* (11 datasets), and RepoEval queries/qrels are generated by the repo's `create/` scripts from
+  MIT RepoCoder data.
+
+**Amendments to prior decisions.**
+- **D23 exit criterion amended:** the "reproduce a published BM25 baseline within ±0.03 on a named corpus
+  slice" exit is replaced by the softened exit above. R2.5b/R2.7's in-repo reproduction is no longer R2's exit
+  path; the ContextBench-Lite real-corpus ablation (R2.5a, DONE) + the qualitative 0.932 reference satisfy R2.
+- **D26 superseded-in-part:** D26 is kept intact as the historical record but annotated above as
+  superseded-in-part — its "Corpus = BOTH" disposition now holds **only for ContextBench-Lite**; the
+  CodeRAG-Bench RepoEval half (R2.5b loader + R2.7 reproduction) is dropped.
+
+**What stands unchanged.** Zero paid spend; the product (codecache binary) stays fully air-gapped (D12/D15);
+the ContextBench-Lite one-time-cached HF download authorized at D26 is unaffected; the ~$1K R3 API spend and
+any paid benchmark/API access remain **separate downstream R3 gates — NOT authorized here**. The **astchunk
+PyPI dependency (R2.6) is the next human gate — NOT yet granted.** Owner: manager (this decision + the doc
+sync) → research-harness-engineer (R2.6 build, once the astchunk dep is human-approved). Brief:
+`.claude/briefs/BRIEF-R2.5-external-corpus-loader.md` (R2.5b section marked CANCELLED per D27).
 
 ---
 

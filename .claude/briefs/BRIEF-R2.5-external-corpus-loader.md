@@ -1,8 +1,8 @@
-# BRIEF — R2.5 / external-corpus loader (R2.5a build now · R2.5b plan)
+# BRIEF — R2.5 / external-corpus loader (R2.5a DONE · R2.5b CANCELLED per D27)
 
 - **Milestone:** R2 offline ablations (D23) — gated slice **R2.5 external-corpus loader** (D26 ratified the gates)  ·  **Module(s):** `research/r1_harness/` only (Python). **Pure `research/`.**
 - **Owner (manager):** principal-engineering-manager  ·  **Implementer:** research-harness-engineer  ·  **Created:** 2026-06-15
-- **Status:** RED ✅  GREEN ✅  REVIEW ✅  DONE ✅ (R2.5a; R2.5b scoped, deferred)
+- **Status:** RED ✅  GREEN ✅  REVIEW ✅  DONE ✅ (R2.5a) · **R2.5b CANCELLED / de-scoped per D27 (2026-06-15)**
 - **Links:** docs/ROADMAP.md "Research track" (R2.5, **D26**) · docs/TODO.md "Research track" · project_overview.md §5–§7 · prior: BRIEF-R2.4-ablation-reporter.md, BRIEF-R2.3b-stub-chunker-ab-plumbing.md
 - **Prior commits:** R2.4 reporter `f6ff03c` · R2.3a ingest seam `fc28fdd` · R2.2b sweep `292b0e4`.
 
@@ -30,10 +30,30 @@
 - No astchunk (R2.6), no LLM/agent/paid spend (R3), no baseline-reproduction run (R2.7).
 - No full 500-task scoring run as a *gate* — R2.5a proves the loader path; the full ablation run is R2.5b/R2.7.
 
-**R2.5b — PLAN (NEXT slice, do NOT build now):**
-- The **CodeRAG-Bench RepoEval (function slice) BEIR loader**: map `corpus.jsonl` / `queries.jsonl` + qrels → `SweepQuery` gold (`gold_files`/`gold_blocks`), scorer unchanged (D21).
-- **First build step of R2.5b: confirm the exact CodeRAG-Bench LICENSE file** (expected CC-BY-SA 4.0 per paper/release; the GitHub-API read 504'd through the env proxy). Record the confirmed license in `research/CLAUDE.md` before mapping any data.
-- This is the corpus **R2.7** reproduces the published BM25 NDCG@10 against (±0.03, D23). RepoEval/RepoCoder underlying data is MIT.
+**R2.5b — ~~PLAN (NEXT slice)~~ CANCELLED / DE-SCOPED per D27 (2026-06-15, human-ratified):**
+
+> **This slice is CUT. Do NOT build it.** The CodeRAG-Bench RepoEval BM25-reproduction loader is de-scoped and
+> R2's exit is softened (real-corpus ablation over ContextBench-Lite + qualitative CodeRAG-Bench BM25 NDCG@10 =
+> 0.932 reference — see ROADMAP **D27**). The original plan is retained below struck-through for the audit trail.
+
+**Why cut (D27 rationale):**
+1. **Methodology mismatch** — RepoEval gold is a **20-line code window**, not a symbol; BM25 hits 0.932 because
+   the query is lexically near that window. Reproducing 0.932 replicates **CodeRAG-Bench's** 20-line chunking +
+   BM25, which does **not** exercise CodeCache's **AST-symbol** chunking — orthogonal to R2's purpose.
+2. **Gated data** — `code-rag-bench/repoeval` on HF returns **401 (gated)**, unlike the open corpus pools;
+   sourcing needs an HF token+terms or a multi-source generate-from-RepoCoder build. Friction not justified.
+3. **Block-scoring mismatch** — RepoEval gold has no symbol names (same issue as ContextBench).
+
+**License resolution (open item now closed):** CodeRAG-Bench data license is **confirmed CC-BY-SA-4.0** via HF
+Hub API `cardData.license` + `license:` tags + README front-matter across
+`code-rag-bench/{library-documentation,github-repos,github-repos-python}` (the GitHub repo's missing LICENSE
+file was a red herring — it governs code, not the HF data). No further license confirmation needed; the loader
+that would have consumed it is cut.
+
+~~Original plan (do NOT build):~~
+- ~~The **CodeRAG-Bench RepoEval (function slice) BEIR loader**: map `corpus.jsonl` / `queries.jsonl` + qrels → `SweepQuery` gold (`gold_files`/`gold_blocks`), scorer unchanged (D21).~~
+- ~~**First build step of R2.5b: confirm the exact CodeRAG-Bench LICENSE file** (expected CC-BY-SA 4.0 per paper/release; the GitHub-API read 504'd through the env proxy). Record the confirmed license in `research/CLAUDE.md` before mapping any data.~~
+- ~~This is the corpus **R2.7** reproduces the published BM25 NDCG@10 against (±0.03, D23). RepoEval/RepoCoder underlying data is MIT.~~
 
 ## Verified external facts (cite; do NOT re-derive)
 - **ContextBench:** `github.com/EuniAI/ContextBench`, arXiv:2602.05892, **Apache-2.0** (confirmed). HF dataset `Contextbench/ContextBench`, **parquet**; verified/"Lite" config `contextbench_verified` = **500 tasks** (full = 1,136). Human-annotated gold contexts (file/block/line). **No static BM25 baseline** — Layer-1 gold corpus ONLY (our scorer over its static gold), NOT number-reproduction.

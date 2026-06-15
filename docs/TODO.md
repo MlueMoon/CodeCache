@@ -343,10 +343,12 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
             Also fixed a measurement bug (grep `./`-prefix split one file into two retrieved entries →
             corrupted Recall@1; +regression test). **R1 exit now met LIVE — no arm-winner claim (that is R3).**
 - [~] **R2 offline ablations** (D23 adopted 2026-06-14; owner: research-harness-engineer; ungated R2.1–R2.4
-      DONE; external-corpus gates ratified D26 2026-06-15 — R2.5a DONE, R2.5b/R2.6/R2.7 next):
-      chunking × ranking × enrichment, Layer-1 only, zero LLM/agent/paid spend. Exit = reproduce a published
-      BM25 baseline within tolerance on a named slice + pick top configs. Brief:
-      `.claude/briefs/BRIEF-R2-offline-ablations.md`.
+      DONE; external-corpus gates ratified D26 2026-06-15 — R2.5 complete-as-R2.5a; **R2.5b CUT, R2 exit
+      softened — D27 2026-06-15**; R2.6 NEXT but GATED on astchunk dep):
+      chunking × ranking × enrichment, Layer-1 only, zero LLM/agent/paid spend. **Exit (softened — D27):** run
+      the real-corpus Layer-1 ablation over **ContextBench-Lite** (R2.5a, DONE) + cite CodeRAG-Bench's
+      published **BM25 NDCG@10 = 0.932** qualitatively (NOT a ±0.03 in-repo reproduction) + pick top configs.
+      Brief: `.claude/briefs/BRIEF-R2-offline-ablations.md`.
       - [x] **Ownership/agent:** `.claude/agents/research-harness-engineer.md` created (sonnet; scope
             `research/`; gates ruff + pytest; process-boundary to the binary); `.claude/CLAUDE.md` agent
             table + `research/CLAUDE.md` ownership line + `docs/ENGINEERING_PLAN.md` §5 updated.
@@ -427,8 +429,11 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
             asserted — outcome-agnostic, overview §7). `Cargo.toml`/`src/`/Rust-`tests/`/`.claude/settings.json`
             untouched. Committed locally `f6ff03c` (explicit pathspec; `runs/` + `.claude/settings.json`
             excluded; not pushed). Brief: `.claude/briefs/BRIEF-R2.4-ablation-reporter.md`. → **R2.5 next (GATED).**
-      - [~] **R2.5 (GATED — D26 ratified 2026-06-15: Corpus=BOTH; Network/HF authorized one-time-cached, zero spend, product air-gapped)
-            external-corpus loader** — sliced **R2.5a (ContextBench-Lite loader, DONE)** + **R2.5b (CodeRAG-Bench RepoEval loader, NEXT)**.
+      - [x] **R2.5 external-corpus loader — COMPLETE as R2.5a only (R2.5b CUT — D27 2026-06-15).** D26 ratified
+            2026-06-15 (Corpus=BOTH; Network/HF authorized one-time-cached, zero spend, product air-gapped); **D27
+            (2026-06-15) de-scoped R2.5b** — the CodeRAG-Bench RepoEval BM25-reproduction loader is dropped (HF-gated
+            401 data + 20-line-window methodology validates a generic BM25 apparatus, not CodeCache's AST-symbol
+            chunking). Only **R2.5a (ContextBench-Lite loader, DONE)** ships; there is no R2.5b.
         - [x] **R2.5a (ContextBench-Lite loader) DONE 2026-06-15 — code-reviewer APPROVED** (BLOCK→fix→APPROVE; reviewer
               independently re-ran ruff+pytest and reproduced the hermetic missing-cache proof). Pure mapper
               `r1harness/contextbench.py` (`parse_contextbench_records(records) -> list[SweepQuery]`, no network/binary/file
@@ -446,16 +451,22 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
               ContextBench *scoring* run would yield all-zero block-level metrics. Before any ContextBench scoring run: either
               re-encode retrieved blocks to the same proxy, OR restrict ContextBench to **file-level** metrics (file-level gold
               matches as-is) and mark block-level N/A in the reporter disclaimer. → research-harness-engineer + manager
-        - [ ] **R2.5b (CodeRAG-Bench RepoEval loader, GATED) — NEXT** — map BEIR `corpus.jsonl`/`queries.jsonl` + qrels →
-              `SweepQuery` gold (scorer unchanged, D21); this is what **R2.7** reproduces the published BM25 NDCG@10 against.
-              **FIRST BUILD STEP: confirm the exact CodeRAG-Bench LICENSE.** Status 2026-06-15: the repo root has **no LICENSE
-              file** (GitHub API `/license` → 404); the CC-BY-SA 4.0 claim is from the paper/release only. Re-check for a LICENSE
-              file and record it in `research/CLAUDE.md` BEFORE loading any data. → research-harness-engineer
-      - [ ] **R2.6 (GATED: astchunk dep #3) cAST baseline chunker** — replace the R2.3 stub with the astchunk
-            PyPI package (MIT, research-only). → research-harness-engineer
-      - [ ] **R2.7 (GATED: R2.5 + named-baseline #4) baseline-reproduction + exit run** — reproduce the
-            published BM25 number within tolerance + run the ~12-cell ablation + promote top configs. Satisfies
-            the R2 exit. → research-harness-engineer + manager (exit verify)
+        - [x] **R2.5b (CodeRAG-Bench RepoEval loader) — CUT / DE-SCOPED (D27, 2026-06-15).** *Why:* (1) RepoEval gold
+              is a 20-line code window, not a symbol, so reproducing the published BM25 NDCG@10 = 0.932 replicates
+              CodeRAG-Bench's chunking, NOT CodeCache's AST-symbol chunking (orthogonal to R2's purpose); (2)
+              `code-rag-bench/repoeval` is HF-gated (401 — token/terms required), unlike the open corpus pools; (3)
+              block-scoring mismatch (no symbol names). The CodeRAG-Bench data license is **confirmed CC-BY-SA-4.0**
+              (HF Hub API `cardData.license` + tags + README front-matter — the GitHub repo's missing LICENSE file was
+              a red herring; it governs code, not the HF data), closing the prior "confirm LICENSE first" open item.
+              ContextBench-Lite (R2.5a) already gives a clean real-corpus ablation. See ROADMAP **D27**. → no owner (cut)
+      - [ ] **R2.6 (GATED: astchunk dep #3 — NOT yet granted) cAST baseline chunker — NEXT** — replace the R2.3
+            stub with the astchunk PyPI package (MIT, research-only). **Next human gate: approve the astchunk PyPI
+            dependency** (D23 gate #3). With R2.5b cut (D27), R2.6 is the next research step. → research-harness-engineer
+      - [ ] **R2.7 baseline-reproduction + exit run — SOFTENED (D27, 2026-06-15)** — **no ±0.03 in-repo
+            reproduction** (R2.5b CUT). Run the real-corpus Layer-1 ablation over **ContextBench-Lite** (R2.5a) +
+            the ~12-cell grid + cite CodeRAG-Bench's published **BM25 NDCG@10 = 0.932** qualitatively (paper Table 3,
+            arXiv:2406.14497) + promote top configs. Satisfies the softened R2 exit. → research-harness-engineer +
+            manager (exit verify)
 - [ ] **R3 agent-in-loop study**: full A0–A5 matrix on 30–50 tasks → promote winners to 100;
       budget/scale sweeps; RQ1–RQ3 plots with CIs; ~$1K API line item → manager + perf
 - [ ] **R4 write-up & release**: preprint + artifact (binary, harness, trajectories); blog;

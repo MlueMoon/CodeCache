@@ -70,14 +70,18 @@ The test suite remains hermetic (green) whether or not these deps are installed.
 - No auth token required. No paid spend.
 - Attribution: EuniAI / ContextBench team.
 
-**CodeRAG-Bench RepoEval** (R2.5b, NOT YET BUILT):
+**CodeRAG-Bench RepoEval** (R2.5b CUT — D27, 2026-06-15; qualitative published reference ONLY, no in-repo loader):
 - Source: github.com/code-rag-bench/code-rag-bench, arXiv:2406.14497 (NAACL'25).
-- License: Per paper/release, expected CC-BY-SA 4.0. **LICENSE file status as of 2026-06-15:
-  the GitHub repo root contains no LICENSE file** (GitHub API `/license` endpoint returns 404;
-  root listing shows only README.md, generation/, preprocessor/, requirements.txt, retrieval/).
-  The CC-BY-SA 4.0 claim comes from the paper/release notes — **not confirmed via LICENSE file**.
-  **FIRST STEP of R2.5b: re-check for a LICENSE file (repo may have added one) and record it.**
-  Do NOT load any CodeRAG-Bench data until license is confirmed.
+- **De-scoped (D27).** The R2.5b RepoEval BEIR loader is **CUT**; CodeCache does **not** load or reproduce
+  CodeRAG-Bench data. We cite its published **BM25 NDCG@10 = 0.932** (paper Table 3) **qualitatively** as a
+  reference number only. The real-corpus Layer-1 ablation uses **ContextBench-Lite (R2.5a)** instead. *Why cut:*
+  RepoEval gold is a 20-line code window (not a symbol), so reproducing 0.932 validates CodeRAG-Bench's chunking,
+  not CodeCache's AST-symbol chunking; the `code-rag-bench/repoeval` HF dataset is gated (401); and RepoEval gold
+  has no symbol names. See ROADMAP **D27**.
+- License: **confirmed CC-BY-SA-4.0** (HF Hub API `cardData.license` + `license:` tags + README front-matter
+  across `code-rag-bench/{library-documentation,github-repos,github-repos-python}`). The GitHub repo's missing
+  LICENSE file was a red herring — it governs code, not the HF data. (Moot now that the loader is cut, but
+  recorded to close the prior open item.)
 - RepoEval/RepoCoder underlying data: MIT.
 
 ## Update rule
