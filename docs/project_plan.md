@@ -354,8 +354,22 @@ impl Storage {
     // files that are gone. Also used to recompute DB-wide index_state totals after a delta.
     pub fn all_indexed_files(&self) -> Result<Vec<PathBuf>>;
 
-    // Full-text search with BM25 ranking
+    // Full-text search with BM25 ranking (built-in default per-column weights 10,1,1,5,2,2,2).
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>>;
+
+    // Full-text search with caller-supplied per-column BM25 weights (R2.2a / Decision Log D24).
+    // `weights` is one f64 per indexed FTS5 column, in `schema::CREATE_SYMBOLS` order (7 total);
+    // `None` is exactly equivalent to `search` (default weights) — `search` delegates here with
+    // `None`, so the default path is byte-identical. FTS5 `bm25()` weights are auxiliary-function
+    // arguments that cannot be bound as `?` parameters, so the 7 f64 are formatted into the SQL
+    // ranking expression; this is injection-safe ONLY because each is a validated `f64` (never raw
+    // CLI text). Ordering invariant is unchanged (`ORDER BY bm25 ASC`, span tie-break downstream).
+    pub fn search_with_weights(
+        &self,
+        query: &str,
+        limit: usize,
+        weights: Option<&[f64; 7]>,
+    ) -> Result<Vec<SearchResult>>;
 
     // Path-scoped symbol skeleton for the `codecache_outline` tool (Decision Log D19, M8.3).
     // Reads the skeleton columns (symbol_name, symbol_type, parent_symbol, file_path, start_line,
@@ -464,6 +478,15 @@ pub struct QueryOptions {
     pub max_tokens: usize,        // Default: 4000
     pub max_results: usize,       // Default: 20
     pub file_filter: Option<Vec<PathBuf>>,  // Optional: restrict to specific files
+    // R2.2a / Decision Log D24: optional per-column BM25 weight override for the 7 indexed
+    // FTS5 columns, in `schema::CREATE_SYMBOLS` order — symbol_name, symbol_type, chunk_text,
+    // parent_symbol, imports, cross_references, file_docstring. `None` ⇒ the built-in default
+    // weights (10,1,1,5,2,2,2), byte-identical to pre-R2.2a behavior. The fixed-size array makes
+    // "exactly 7 weights" a compile-time invariant; the CLI `--bm25-weights` flag parses 7
+    // comma-separated f64 into it (malformed/wrong-arity input → a typed error, never a panic).
+    // Exists so the R2 research harness can sweep ranking weights per `codecache query` invocation
+    // over the process boundary without recompiling.
+    pub bm25_weights: Option<[f64; 7]>,
 }
 
 pub struct QueryResult {
@@ -1168,6 +1191,11 @@ OPTIONS:
     --max-results <N>       Maximum number of results [default: 20]
     --format <FORMAT>       Output format: toon|json|text [default: text]
     --file-filter <GLOB>    Restrict search to files matching glob
+    --bm25-weights <W>      7 comma-separated f64 per-column BM25 weights, in indexed-column
+                            order: symbol_name,symbol_type,chunk_text,parent_symbol,imports,
+                            cross_references,file_docstring. Omitted ⇒ the built-in defaults
+                            10,1,1,5,2,2,2. (R2.2a / D24 — for the R2 weight-sweep harness;
+                            malformed or non-7-value input is a clean error, never a panic.)
     --db-path <PATH>        Database location [default: .codecache/index.db]
 
 EXAMPLES:
@@ -1185,6 +1213,9 @@ EXAMPLES:
     
     # Filter to specific directory
     codecache query "auth" --file-filter "src/auth/**"
+
+    # Override BM25 per-column weights (R2 ranking sweep; default is 10,1,1,5,2,2,2)
+    codecache query "authenticate user" --bm25-weights "5,1,3,2,1,1,1"
 ```
 
 #### `codecache status`

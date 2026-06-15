@@ -45,7 +45,11 @@ The search-execution half of `query` (no token budget yet — that's M6.3):
 - `trait Retrieve { fn query(&self, &str, QueryOptions) -> Result<QueryResult> }` — the **D1** seam,
   minimal on purpose so a future `HybridRetriever` implements the same trait without churn.
 - `Retriever { storage: Storage }` + `Retriever::new(storage)`; implements `Retrieve`.
-- `QueryOptions { max_tokens, max_results, file_filter }` (+ `Default` = 4000/20/None, §3.2.3).
+- `QueryOptions { max_tokens, max_results, file_filter, bm25_weights }` (+ `Default` =
+  4000/20/None/None, §3.2.3). `bm25_weights: Option<[f64; 7]>` is the R2.2a/D24 per-column BM25
+  override; `None` ⇒ default weights (default-identical), `Some(w)` ⇒ re-rank via
+  `Storage::search_with_weights`. `query` threads it: `storage.search_with_weights(&expr,
+  max_results, options.bm25_weights.as_ref())` (was `storage.search`).
 - `QueryResult { chunks, total_tokens, total_results_found }`. `total_tokens` is `0` until M6.3;
   `total_results_found` is the post-filter + post-dedup (pre-budget) count.
 - `RetrieverError::Storage(StorageError)` (impl Error/Display, `From<StorageError>`) + `Result<T>`.
@@ -113,3 +117,7 @@ The §6.3 greedy packer; `query` now trims to the budget instead of returning ev
   `sample.json`). p95<500ms tracked as a **baseline, not a CI gate** (hard gate = M10). Reviewer APPROVED.
   **Actual p50/p95/p99 + clippy/fmt/`cargo bench` + EXPLAIN QUERY PLAN baseline PENDING main-session run**
   (manager subagent cannot run cargo).
+- **R2.2a / D24 GREEN (2026-06-14):** `QueryOptions.bm25_weights: Option<[f64; 7]>` added (+ `Default
+  = None`); `query` routes it to `Storage::search_with_weights`. `None` keeps every existing retriever
+  test's order (default-identical); `Some(custom)` changes ranking. +1 integration test
+  (`bm25_weights_some_changes_ranking_vs_none`); all 13 retriever tests green; all four gates clean.

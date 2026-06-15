@@ -49,7 +49,8 @@
 //! ### Seeding
 //! Each corpus's `chunks` are seeded into a fresh in-memory `Storage` via the public
 //! `Storage::insert_chunks` API. The retriever is `Retriever::new(storage)` using
-//! `QueryOptions { max_tokens: 4000, max_results: 20, file_filter: None }` (the §3.2.3 defaults).
+//! `QueryOptions { max_tokens: 4000, max_results: 20, file_filter: None, bm25_weights: None }`
+//! (the §3.2.3 defaults; `bm25_weights: None` ⇒ the default per-column weights, R2.2a/D24).
 //!
 //! ### BM25 semantic gap note (D1)
 //! Queries marked `"query_type": "semantic"` use vocabulary that does not appear verbatim in
@@ -436,6 +437,8 @@ fn score_corpus(
             max_tokens: 4000,
             max_results,
             file_filter: None,
+            // R2.2a / D24: default per-column BM25 weights (default-identical path; not a change).
+            bm25_weights: None,
         };
         let qresult = retriever
             .query(&qcase.query, opts)

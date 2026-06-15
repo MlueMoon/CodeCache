@@ -554,6 +554,31 @@ benchmark data (separate from the product's air-gapped guarantee); approve the *
 confirm the **scope cuts + the named published baseline/tolerance**. The **~$1K R3 spend** and any paid access
 stay R3 gates. Owner: manager (proposal + spike) → research-harness-engineer (R2 build, on ratification).
 
+### D24 — CLI-reachable per-column BM25 weight override (`--bm25-weights` / `QueryOptions.bm25_weights` / `Storage::search_with_weights`)  · **Adopted 2026-06-14** (plan: research track R2.2a) — *spec: §3.2.2, §3.2.3, §7.2 (`codecache query`)*
+The 7 per-column FTS5 `bm25()` weights were hardcoded in `src/storage/queries.rs::SEARCH`
+(`symbol_name` 10.0, `parent_symbol` 5.0, the rest 2.0/1.0) with **no CLI/config surface** — the
+config's `bm25_k1`/`bm25_b` are inert w.r.t. FTS5's `bm25()` (D23 verified this). R2's weight-sweep
+(R2.2b) drives the retriever over the `codecache_tool.py` **process boundary**, so it must vary the
+weights **per `codecache query` invocation without recompiling**. **Decision: add a CLI-reachable
+per-invocation override** — the **one place R2 touches the Rust crate** (flagged in D23), built
+test-first through the normal TDD team, `Cargo.toml` untouched. Surface (additive, plan-amended
+before code): `QueryOptions.bm25_weights: Option<[f64; 7]>` (the `[f64; 7]` array makes "exactly 7
+weights" a **compile-time invariant** below the CLI parse boundary); `Storage::search_with_weights(
+&str, usize, Option<&[f64; 7]>)` (`search` delegates with `None`); CLI `query --bm25-weights
+"w0,…,w6"` (7 comma-separated f64 in `schema::CREATE_SYMBOLS` indexed-column order). **`None` ⇒ the
+built-in defaults (10,1,1,5,2,2,2), byte-identical to pre-R2.2a** — the `None` path reuses the
+unchanged `queries::SEARCH` const verbatim. FTS5 `bm25()` weights are **auxiliary-function
+arguments** that **cannot be `?`-bound**, so the 7 f64 are **formatted** into the ranking expression
+(`{:?}` → always a valid, locale-free SQLite numeric literal) — injection-safe **only** because each
+is a validated finite f64, never raw CLI text (`MATCH ?1`/`LIMIT ?2` stay parameterized). Guards:
+the CLI rejects wrong-arity / non-numeric / non-finite input as a typed error → clean nonzero exit
+(no panic); a defensive `StorageError::NonFiniteWeight` blocks a non-finite weight from ever reaching
+SQL. Zero/negative weights are **allowed** (FTS5 honors them; the sweep wants them). MCP
+`codecache_search` stays default-weighted (builds `QueryOptions` via `..Default::default()`). Owner:
+manager (this decision + the §3.2.2/§3.2.3/§7.2 amendment) → test-lead (RED) → eng-lead (GREEN) +
+rust-treesitter-specialist (FTS5 bind-vs-format) → code-reviewer (APPROVE, 0 findings). 208 tests
+green; all four gates clean (Rust 1.85). Brief: `.claude/briefs/BRIEF-R2.2a-bm25-weights-flag.md`.
+
 ---
 
 ## Deferred to v0.2+ (from project_plan §9.2)

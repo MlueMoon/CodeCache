@@ -41,6 +41,47 @@ WHERE symbols MATCH ?1
 ORDER BY score ASC, rowid ASC
 LIMIT ?2;";
 
+/// Build the `SEARCH` SQL with a caller-supplied per-column `bm25()` weight vector (R2.2a / D24).
+///
+/// Identical to [`SEARCH`] in every respect — same column list/order, same `MATCH ?1` / `LIMIT ?2`
+/// bindings, same `ORDER BY score ASC, rowid ASC` — except the 7 ranking weights inside
+/// `bm25(symbols, …)` are formatted from `weights` instead of the baked-in defaults. FTS5's
+/// `bm25()` weights are auxiliary-function arguments, **not** value positions, so they cannot be
+/// bound as `?` parameters and must be rendered into the SQL text. This is injection-safe because
+/// each weight is a finite `f64` rendered via [`fmt_weight`] as a bare numeric literal — never raw
+/// user text. Callers must ensure every weight is finite (non-finite values are rejected upstream
+/// and at the storage layer); `fmt_weight`'s contract is finite-only.
+pub fn search_with_weights_sql(weights: &[f64; 7]) -> String {
+    format!(
+        "\
+SELECT
+    symbol_name, symbol_type, chunk_text, parent_symbol, imports, cross_references, file_docstring,
+    file_path, start_byte, end_byte, start_line, end_line, language,
+    bm25(symbols, {}, {}, {}, {}, {}, {}, {}) AS score
+FROM symbols
+WHERE symbols MATCH ?1
+ORDER BY score ASC, rowid ASC
+LIMIT ?2;",
+        fmt_weight(weights[0]),
+        fmt_weight(weights[1]),
+        fmt_weight(weights[2]),
+        fmt_weight(weights[3]),
+        fmt_weight(weights[4]),
+        fmt_weight(weights[5]),
+        fmt_weight(weights[6]),
+    )
+}
+
+/// Render one finite BM25 column weight as a SQL numeric literal. `f64`'s `Debug` formatting always
+/// emits a decimal point (so an integral weight like `10.0` is a `REAL` literal, not bareword text)
+/// and is locale-independent, so the output is always a valid SQLite numeric literal — including for
+/// zero (`0.0`) and negatives (`-1.0`, parsed as unary-minus on a numeric literal), both of which
+/// FTS5 `bm25()` accepts. **Finite-only:** the non-finite `inf`/`NaN` would format as the barewords
+/// `inf`/`NaN` (invalid SQL), so callers guarantee finiteness before calling.
+fn fmt_weight(w: f64) -> String {
+    format!("{w:?}")
+}
+
 /// Path-scoped symbol skeleton for the `codecache_outline` tool (Decision Log **D19**). A plain
 /// column `SELECT` over the contentful `symbols` FTS5 table reading the UNINDEXED line columns
 /// (zero source reads — D7). Returns the symbols of an EXACT file (`file_path = ?1`) OR every

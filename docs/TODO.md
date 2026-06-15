@@ -355,10 +355,23 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
             port) + `ndcg_file`/`ndcg_block` in `MetricAtK`/`score_query`/`macro_average`; 10 hand-computed
             `tests/test_scorer.py` cases. **49 pytest + ruff green; code-reviewer APPROVED** the slice. (ruff
             gate baseline for the research tree stood up in the same effort, commit `9b42702`.)
-      - [ ] **R2.2 (UNGATED scaffolding; +crate flag) BM25 weight-sweep** over the retriever via the
+      - [~] **R2.2 (UNGATED scaffolding; +crate flag) BM25 weight-sweep** over the retriever via the
             `codecache_tool.py` process boundary. **Confirmed:** the 7 per-column weights are hardcoded in
             `src/storage` with no CLI/config surface → varying them needs a small test-first crate flag
             (`Cargo.toml` untouched). → research-harness-engineer (+ test-lead/eng-lead for the crate flag)
+        - [x] **R2.2a (crate flag) DONE 2026-06-14 — reviewer-APPROVED (0 findings); STAGED, awaiting
+              main-session commit.** `codecache query --bm25-weights "<7 csv f64>"` →
+              `QueryOptions.bm25_weights: Option<[f64; 7]>` → `Storage::search_with_weights(query, limit,
+              Option<&[f64; 7]>)` (D24, plan §3.2.2/§3.2.3/§7.2; `search` delegates with `None`). `None` ⇒
+              default weights (byte-identical); the 7 validated finite f64 are **formatted** into
+              `bm25(symbols, …)` (FTS5 aux-fn args can't be `?`-bound; injection-safe — `MATCH`/`LIMIT` stay
+              bound); malformed/non-finite/wrong-arity → typed error → clean nonzero exit (no panic). +12
+              tests (4 storage / 1 retriever / 3 cli / 4 cli-parser unit); **208 total** green; fmt +
+              clippy(-D warnings) + test all clean (reviewer re-ran them); `Cargo.toml` untouched.
+              storage/retriever/cli CLAUDE.md + TEST_STRATEGY.md updated. → BRIEF-R2.2a-bm25-weights-flag.md
+        - [ ] **R2.2b (research sweep) — NEXT (main session owns).** Drive the now-exposed `--bm25-weights`
+              flag across the `codecache_tool.py` process boundary to sweep ~3 weight settings (D23 ablation
+              axis); score via the R2.1 NDCG@10 / Layer-1 scorer. Pure `research/`, zero crate change. → research-harness-engineer
       - [ ] **R2.3 (UNGATED) chunker-swap seam** with an in-harness stub chunker (proves A/B plumbing before
             astchunk). Reuses `corpus.py`. → research-harness-engineer
       - [ ] **R2.4 (UNGATED) ablation-table reporter** — pure deterministic emit of {chunking × weights ×

@@ -40,6 +40,11 @@ this document is the source for "what scenarios must a slice cover" referenced b
 - Insert/query/delete round-trip; bulk insert; delete-by-file.
 - FTS5 `MATCH` returns expected rows; `bm25()` orders by relevance; column weighting respected.
 - Corrupt/locked DB → error, not panic. Empty-DB query → empty result.
+- **R2.2a (D24) `search_with_weights(q, lim, Option<&[f64;7]>)`** — custom 7-column weights override
+  the baked-in `[10,1,1,5,2,2,2]`: a vector zeroing `symbol_name` + boosting `chunk_text`
+  (`[0,1,5,1,1,1,1]`) REORDERS a name-match-first ranking to body-match-first (verified vs FTS5);
+  `None` ≡ `search(q,lim)` ≡ `Some(&default)` (byte-identical); custom weights deterministic + still
+  `bm25 ASC`; zero/negative weights ⇒ `Ok` (FTS5 accepts them), never error.
 
 ### hasher
 - Deterministic xxHash3-128 for identical content; differs on 1-byte change.
@@ -78,6 +83,9 @@ this document is the source for "what scenarios must a slice cover" referenced b
 - BM25 ranking deterministic; relevant chunk ranks above irrelevant.
 - `--max-tokens` budget never exceeded; greedy packing stops at budget; token count accurate.
 - Empty query / no matches ⇒ empty, well-formed result. Dedup of overlapping snippets.
+- **R2.2a (D24) `QueryOptions.bm25_weights: Option<[f64;7]>`** — `None` is default-identical (every
+  existing retriever test stays green with the field added); `Some(custom)` threads through to
+  `storage.search_with_weights` and changes the returned ranking (name-vs-body reorder seed).
 
 ### formatter
 - Golden outputs for TOON, JSON, plaintext; JSON is valid and round-trips; file:line pairs correct.
@@ -86,6 +94,10 @@ this document is the source for "what scenarios must a slice cover" referenced b
 ### cli
 - Each command parses expected args/flags; `--help`/`--version`; bad args ⇒ helpful error + nonzero exit.
 - E2E: `init → index → query` through the built binary on a fixture repo.
+- **R2.2a (D24) `query --bm25-weights "<7 csv f64>"`** — valid 7-value vector parses + runs to exit 0
+  on an indexed fixture (and `query --help` advertises the flag); malformed (wrong arity `"1,2,3"` /
+  `"1,2,3,4,5,6,7,8"`, non-numeric `"a,b,c,d,e,f,g"`, empty `""`) ⇒ NONZERO exit + non-empty stderr +
+  NO `panicked` on either stream (typed parse error, never a panic); absent ⇒ default behavior.
 
 ### mcp_server
 - JSON-RPC handshake; tool registration list (all three tools — `codecache_search`,

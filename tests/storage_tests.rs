@@ -625,3 +625,180 @@ fn symbols_for_path_unknown_path_returns_empty() {
         "unknown path ⇒ empty Vec (well-formed), got {rows:?}"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// R2.2a — D24: `Storage::search_with_weights(query, limit, Option<&[f64; 7]>)` (RED).
+//
+// The crate flag underlying `codecache query --bm25-weights "..."`: a per-invocation override of the
+// 7 per-column FTS5 BM25 weights that `queries::SEARCH` currently bakes in. The 7 weights are in the
+// indexed-column order of `schema::CREATE_SYMBOLS`:
+//   [symbol_name, symbol_type, chunk_text, parent_symbol, imports, cross_references, file_docstring]
+//
+// These tests fail to COMPILE now — `Storage::search_with_weights` does not exist yet. That compile
+// error IS the RED state; making it compile + pass is the eng-lead's GREEN target.
+//
+// PINNED CONTRACT (the tests are the spec; the eng-lead must honor these exact values):
+//   - Signature: `pub fn search_with_weights(&self, query: &str, limit: usize,
+//                 weights: Option<&[f64; 7]>) -> storage::Result<Vec<SearchResult>>`.
+//   - DEFAULT_WEIGHTS = [10.0, 1.0, 1.0, 5.0, 2.0, 2.0, 2.0] — the value baked into `queries::SEARCH`.
+//   - `None` ⇒ byte-identical to today's `search(query, limit)` AND to
+//     `search_with_weights(query, limit, Some(&DEFAULT_WEIGHTS))`.
+//   - Custom weights are formatted into the `bm25(symbols, …)` ranking expression (FTS5 bm25()
+//     weights are auxiliary-fn args, NOT bindable `?` params); `MATCH ?1` / `LIMIT ?2` stay bound.
+//   - Ordering invariant unchanged: `bm25 ASC, rowid ASC`.
+//   - FTS5 accepts zero / negative weights ⇒ those must NOT error at the storage layer.
+//
+// REORDER SEED (verified empirically against real FTS5 — the flip is unambiguous + deterministic):
+//   Seed two chunks sharing the term "session":
+//     a.py / symbol_name="session", body "def session(): pass"      (term in the NAME column)
+//     b.py / symbol_name="helper",  body "... session and the session again"  (term in BODY only)
+//   With DEFAULT_WEIGHTS (symbol_name=10) the NAME match (a.py "session") ranks ABOVE the body-only
+//   match (b.py "helper"). With REORDER_WEIGHTS = [0.0, 1.0, 5.0, 1.0, 1.0, 1.0, 1.0] (symbol_name
+//   zeroed, chunk_text boosted to 5) the order FLIPS: the body-only "helper" ranks first. Distinct
+//   bm25 scores under both weightings (no tie), so the flip is decided purely by score — stable.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+/// The 7 per-column BM25 weights baked into `queries::SEARCH`, in `schema::CREATE_SYMBOLS` indexed-
+/// column order. `None` and `Some(&DEFAULT_WEIGHTS)` must both reproduce today's `search`.
+const DEFAULT_WEIGHTS: [f64; 7] = [10.0, 1.0, 1.0, 5.0, 2.0, 2.0, 2.0];
+
+/// Custom weights that DETERMINISTICALLY flip the default name-vs-body ranking: symbol_name zeroed
+/// (index 0), chunk_text boosted to 5.0 (index 2). Verified empirically against FTS5.
+const REORDER_WEIGHTS: [f64; 7] = [0.0, 1.0, 5.0, 1.0, 1.0, 1.0, 1.0];
+
+/// Seed the canonical name-vs-body reorder corpus and return the storage handle.
+/// a.py: "session" is the symbol NAME (default-weighted high); b.py: "session" lives only in the
+/// BODY (chunk_text). Both match the query "session"; distinct files + spans ⇒ no dedup collision.
+fn seed_name_vs_body() -> (tempfile::TempDir, Storage) {
+    let (dir, storage) = fresh_storage();
+    let name_match = chunk("a.py", "session", "def session():\n    pass");
+    let body_match = chunk(
+        "b.py",
+        "helper",
+        "def helper():\n    open the session and the session again",
+    );
+    storage
+        .insert_chunks(&[body_match, name_match])
+        .expect("seed name-vs-body corpus");
+    (dir, storage)
+}
+
+/// Project a result list down to the symbol-name order, for compact ordering assertions.
+fn names_of(results: &[codecache::storage::SearchResult]) -> Vec<String> {
+    results
+        .iter()
+        .map(|r| r.chunk.symbol_name.clone())
+        .collect()
+}
+
+#[test]
+fn search_with_weights_custom_reorders_ranking_vs_default() {
+    // Proves the weights actually take effect: zeroing symbol_name + boosting chunk_text flips the
+    // default name-match-first ordering so the body-only match leads. Asserts BOTH the default order
+    // (baseline) and the flipped custom order on the same seed, so the change is unambiguous.
+    let (_dir, storage) = seed_name_vs_body();
+
+    let default = storage
+        .search_with_weights("session", 10, Some(&DEFAULT_WEIGHTS))
+        .expect("default-weighted search");
+    assert_eq!(
+        names_of(&default),
+        vec!["session".to_string(), "helper".to_string()],
+        "DEFAULT weights (symbol_name=10): the name match `session` outranks the body-only `helper`"
+    );
+
+    let reordered = storage
+        .search_with_weights("session", 10, Some(&REORDER_WEIGHTS))
+        .expect("custom-weighted search");
+    assert_eq!(
+        names_of(&reordered),
+        vec!["helper".to_string(), "session".to_string()],
+        "REORDER weights (symbol_name=0, chunk_text=5): the body-only `helper` now outranks `session`"
+    );
+
+    // The two weightings produce DIFFERENT orderings for this seed (the headline guarantee).
+    assert_ne!(
+        names_of(&default),
+        names_of(&reordered),
+        "custom weights must change the result ordering vs the default"
+    );
+}
+
+#[test]
+fn search_with_weights_none_is_identical_to_default() {
+    // DEFAULT-IDENTICAL contract: for the same seed, `search`, `search_with_weights(.., None)`, and
+    // `search_with_weights(.., Some(&DEFAULT_WEIGHTS))` return IDENTICAL Vec<SearchResult> — same
+    // chunks, same order, same scores. `None` must reuse the existing default path, not a drifted copy.
+    let (_dir, storage) = seed_name_vs_body();
+
+    let via_search = storage.search("session", 10).expect("legacy search");
+    let via_none = storage
+        .search_with_weights("session", 10, None)
+        .expect("search_with_weights None");
+    let via_explicit_default = storage
+        .search_with_weights("session", 10, Some(&DEFAULT_WEIGHTS))
+        .expect("search_with_weights explicit default");
+
+    assert_eq!(
+        via_search, via_none,
+        "search(q, lim) == search_with_weights(q, lim, None) (byte-identical default path)"
+    );
+    assert_eq!(
+        via_search, via_explicit_default,
+        "search(q, lim) == search_with_weights(q, lim, Some(&DEFAULT_WEIGHTS)) (default round-trips)"
+    );
+}
+
+#[test]
+fn search_with_weights_custom_is_deterministic_and_bm25_ordered() {
+    // Determinism under custom weights: repeated calls with the same custom vector return identical
+    // orderings, and the ordering stays bm25-ascending (best-first) — the documented invariant is
+    // unchanged by the weight override.
+    let (_dir, storage) = seed_name_vs_body();
+
+    let first = storage
+        .search_with_weights("session", 10, Some(&REORDER_WEIGHTS))
+        .expect("custom search 1");
+    for _ in 0..5 {
+        let again = storage
+            .search_with_weights("session", 10, Some(&REORDER_WEIGHTS))
+            .expect("custom search n");
+        assert_eq!(
+            names_of(&first),
+            names_of(&again),
+            "repeated identical custom-weighted searches must yield identical ordering"
+        );
+    }
+
+    // Scores are non-decreasing (bm25 ASC = best-first; FTS5 bm25() is lower-is-better).
+    for w in first.windows(2) {
+        assert!(
+            w[0].bm25_score <= w[1].bm25_score,
+            "custom-weighted results stay bm25-ascending: {} <= {}",
+            w[0].bm25_score,
+            w[1].bm25_score
+        );
+    }
+}
+
+#[test]
+fn search_with_weights_zero_and_negative_do_not_error() {
+    // Edge: FTS5's bm25() accepts zero and negative column weights; the storage layer must pass them
+    // through and return Ok(_), never erroring. The sweep (R2.2b) may explore such vectors, so this
+    // is a real contract, not a curiosity. We assert Ok + that the matching rows still come back.
+    let (_dir, storage) = seed_name_vs_body();
+
+    let weights: [f64; 7] = [0.0, 1.0, 1.0, 5.0, 2.0, 2.0, -1.0]; // a 0.0 and a -1.0 entry
+    let result = storage.search_with_weights("session", 10, Some(&weights));
+    assert!(
+        result.is_ok(),
+        "zero/negative weights must not error at the storage layer (FTS5 accepts them): {:?}",
+        result.err()
+    );
+    let rows = result.expect("ok");
+    assert_eq!(
+        rows.len(),
+        2,
+        "both seeded chunks still match `session` under the edge weight vector"
+    );
+}

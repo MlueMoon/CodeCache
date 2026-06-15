@@ -47,15 +47,23 @@ pub struct QueryOptions {
     pub max_results: usize,
     /// When `Some`, keep only results whose `file_path` is in this list (post-filter).
     pub file_filter: Option<Vec<PathBuf>>,
+    /// Optional per-column BM25 weight override (R2.2a / **D24**). One `f64` per indexed FTS5 column
+    /// in `schema::CREATE_SYMBOLS` order (`symbol_name`, `symbol_type`, `chunk_text`,
+    /// `parent_symbol`, `imports`, `cross_references`, `file_docstring`). `None` ⇒ the built-in
+    /// default weights (10,1,1,5,2,2,2), byte-identical to pre-R2.2a behavior; `Some(w)` re-ranks
+    /// via [`crate::storage::Storage::search_with_weights`]. Threaded from the CLI `--bm25-weights`
+    /// flag so the R2 harness can sweep ranking weights per `codecache query` without recompiling.
+    pub bm25_weights: Option<[f64; 7]>,
 }
 
 impl Default for QueryOptions {
-    /// §3.2.3 defaults: 4000-token budget, 20 results, no file filter.
+    /// §3.2.3 defaults: 4000-token budget, 20 results, no file filter, default BM25 weights.
     fn default() -> Self {
         QueryOptions {
             max_tokens: 4000,
             max_results: 20,
             file_filter: None,
+            bm25_weights: None,
         }
     }
 }
@@ -246,9 +254,15 @@ impl Retrieve for Retriever {
         }
 
         let match_expr = build_match_expression(&tokens);
-        // The expression is bound to `symbols MATCH ?1` inside `Storage::search` — parameterized,
-        // never string-interpolated into SQL.
-        let mut hits = self.storage.search(&match_expr, options.max_results)?;
+        // The expression is bound to `symbols MATCH ?1` inside `Storage::search_with_weights` —
+        // parameterized, never string-interpolated into SQL. `options.bm25_weights` (R2.2a / D24)
+        // selects the per-column BM25 weights: `None` ⇒ the built-in defaults (the default-identical
+        // path); `Some(w)` ⇒ the caller's `--bm25-weights` override re-ranks the FTS5 results.
+        let mut hits = self.storage.search_with_weights(
+            &match_expr,
+            options.max_results,
+            options.bm25_weights.as_ref(),
+        )?;
 
         Self::stable_sort(&mut hits);
         let filtered = Self::apply_file_filter(hits, &options.file_filter);

@@ -17,7 +17,7 @@
 - `index` — `--full`, `--db-path`, `--progress`
 - `update <FILE>...` (required positional) — `--db-path`
 - `query <QUERY>` — `--max-tokens 4000`, `--max-results 20`, `--format` toon|json|text [text],
-  `--file-filter`, `--db-path`
+  `--file-filter`, `--bm25-weights <W>` (R2.2a/D24; 7 csv f64, absent ⇒ default weights), `--db-path`
 - `status` — `--db-path`
 - `config` — positional `KEY [VALUE]` + `--db-path` (minimal/forward-compatible; read/write
   semantics land in M7.3)
@@ -49,7 +49,14 @@ Handlers are thin adapters returning `anyhow::Result<()>` (Err → nonzero exit;
   (no glob expansion in v0.1). **Empty-result + text format prints `No results found.`** instead of
   the formatter's query-echoing empty header — an intentional CLI UX choice (the pure `formatter`
   empty-text golden is unchanged; the CLI just declines to render it). JSON always pipes through the
-  formatter (parseable); empty TOON stays the query-free empty string.
+  formatter (parseable); empty TOON stays the query-free empty string. **R2.2a/D24:** `--bm25-weights
+  "<7 csv f64>"` threads a per-column BM25 weight override into `QueryOptions.bm25_weights` (absent ⇒
+  `None` ⇒ default weights). Parsed by the module-private `parse_bm25_weights` helper (unit-tested):
+  split on `,`, parse each as f64, require **exactly 7**, reject non-finite (NaN/±inf); **zero and
+  negative weights are allowed** (FTS5 honors them; the R2 sweep uses them). Any malformed/wrong-arity
+  value → a typed `anyhow` error (validated BEFORE opening storage) → clean nonzero exit, never a
+  panic. MCP `codecache_search` stays default-weighted (CLI-only surface — it builds `QueryOptions`
+  via `..Default::default()`, inheriting `None`).
 - `status` → reads `Storage::get_index_state("total_files"/"total_chunks")` + db file size +
   per-language counts from `files_metadata`; prints version + Files + Chunks + size. **Deferred (no
   schema change this slice):** Created/Last-index timestamps + per-symbol_type breakdown.
@@ -69,3 +76,6 @@ M7.3 DONE (2026-06-12): command handlers + `status` aggregates + `config` read/w
 green (cli_tests 11/11); reviewer APPROVED (0 findings). Binary E2E → M7.4.
 M8.1 DONE (2026-06-12): `serve` stub replaced — stdio wires the hand-rolled `mcp_server`; SSE returns a
 clean unsupported error (D4 seam); reviewer APPROVED; all four gates green.
+R2.2a / D24 GREEN (2026-06-14): `query --bm25-weights <W>` added (clap arg + `dispatch` thread +
+`parse_bm25_weights` helper in `query.rs`). +3 cli_tests (help lists flag / valid vector runs /
+malformed → nonzero no-panic) + 4 parser unit tests; cli_tests 14/14, lib unit 33; all four gates clean.

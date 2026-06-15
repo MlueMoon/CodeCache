@@ -62,11 +62,14 @@ fn chunk(file: &str, name: &str, body: &str) -> Chunk {
 }
 
 /// Generous options: large token budget (no trimming in this slice), default-ish caps.
+/// `bm25_weights: None` ⇒ the default per-column BM25 weights (R2.2a / D24) — this is the
+/// default-identical path, NOT a behavior change.
 fn opts() -> QueryOptions {
     QueryOptions {
         max_tokens: 1_000_000,
         max_results: 20,
         file_filter: None,
+        bm25_weights: None,
     }
 }
 
@@ -308,6 +311,7 @@ fn file_filter_restricts_results_to_listed_files() {
         max_tokens: 1_000_000,
         max_results: 20,
         file_filter: Some(vec![PathBuf::from("src/keep.py")]),
+        bm25_weights: None,
     };
     let result = retriever
         .query("configuration load", options)
@@ -366,6 +370,7 @@ fn packing_never_exceeds_max_tokens() {
         max_tokens: 60,
         max_results: 20,
         file_filter: None,
+        bm25_weights: None,
     };
     let result = retriever.query("widget", options).expect("query");
 
@@ -404,6 +409,7 @@ fn greedy_stops_at_budget_keeping_top_ranked() {
         max_tokens: 60,
         max_results: 20,
         file_filter: None,
+        bm25_weights: None,
     };
     let result = retriever.query("widget", options).expect("query");
 
@@ -442,6 +448,7 @@ fn total_results_found_reflects_pre_budget_count() {
         max_tokens: 60,
         max_results: 20,
         file_filter: None,
+        bm25_weights: None,
     };
     let result = retriever.query("widget", options).expect("query");
 
@@ -473,6 +480,7 @@ fn total_tokens_reported_matches_sum_of_packed() {
         max_tokens: 35,
         max_results: 20,
         file_filter: None,
+        bm25_weights: None,
     };
     let result = retriever.query("widget", options).expect("query");
 
@@ -509,6 +517,7 @@ fn oversized_first_chunk_yields_empty_pack() {
         max_tokens: 10,
         max_results: 20,
         file_filter: None,
+        bm25_weights: None,
     };
     let result = retriever.query("widget", options).expect("query");
 
@@ -520,5 +529,93 @@ fn oversized_first_chunk_yields_empty_pack() {
     assert_eq!(
         result.total_results_found, 1,
         "found count still reflects the one pre-budget match"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// R2.2a — D24: `QueryOptions.bm25_weights` threads through to ranking (RED).
+//
+// The retriever must route `options.bm25_weights` into the storage call (was `storage.search`, now
+// `storage.search_with_weights(.., options.bm25_weights.as_ref())`). `None` ⇒ default weights (every
+// existing retriever test above keeps its order, now that the literals carry `bm25_weights: None`).
+// `Some(custom)` ⇒ the custom per-column weights change the returned ranking.
+//
+// Seed (verified empirically against FTS5, see tests/storage_tests.rs R2.2a notes):
+//   a.py / symbol_name="session"  + body "def session(): pass"            (term in the NAME column)
+//   b.py / symbol_name="helper"   + body "... session and the session again" (term in BODY only)
+// Default weights (symbol_name=10) ⇒ "session" first. REORDER_WEIGHTS = [0,1,5,1,1,1,1]
+// (symbol_name=0, chunk_text=5) ⇒ the body-only "helper" first. The custom bm25 scores DIFFER, so
+// the retriever's bm25-ascending stable sort decides the order — the (file_path, start_byte)
+// tie-break never engages, making the flip robust.
+//
+// This fails to COMPILE until `QueryOptions` gains the `bm25_weights: Option<[f64; 7]>` field.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+/// The custom per-column weight vector that flips the default name-vs-body ranking (symbol_name
+/// zeroed at index 0, chunk_text boosted to 5.0 at index 2). Matches `storage_tests::REORDER_WEIGHTS`.
+const REORDER_WEIGHTS: [f64; 7] = [0.0, 1.0, 5.0, 1.0, 1.0, 1.0, 1.0];
+
+#[test]
+fn bm25_weights_some_changes_ranking_vs_none() {
+    // The same seed + query, run once with default weights (None) and once with the custom vector,
+    // must yield DIFFERENT orderings — proving QueryOptions.bm25_weights reaches storage ranking.
+    let (_dir, storage) = fresh_storage();
+    let name_match = chunk("a.py", "session", "def session():\n    pass");
+    let body_match = chunk(
+        "b.py",
+        "helper",
+        "def helper():\n    open the session and the session again",
+    );
+    storage
+        .insert_chunks(&[body_match, name_match])
+        .expect("seed name-vs-body corpus");
+
+    let retriever = Retriever::new(storage);
+
+    // None ⇒ default weights: the NAME match `session` ranks first.
+    let default_opts = QueryOptions {
+        max_tokens: 1_000_000,
+        max_results: 20,
+        file_filter: None,
+        bm25_weights: None,
+    };
+    let default = retriever
+        .query("session", default_opts)
+        .expect("default-weighted query");
+    let default_order: Vec<String> = default
+        .chunks
+        .iter()
+        .map(|r| r.chunk.symbol_name.clone())
+        .collect();
+    assert_eq!(
+        default_order,
+        vec!["session".to_string(), "helper".to_string()],
+        "default weights: the name match `session` ranks first"
+    );
+
+    // Some(custom) ⇒ symbol_name zeroed + chunk_text boosted: the body-only `helper` ranks first.
+    let custom_opts = QueryOptions {
+        max_tokens: 1_000_000,
+        max_results: 20,
+        file_filter: None,
+        bm25_weights: Some(REORDER_WEIGHTS),
+    };
+    let custom = retriever
+        .query("session", custom_opts)
+        .expect("custom-weighted query");
+    let custom_order: Vec<String> = custom
+        .chunks
+        .iter()
+        .map(|r| r.chunk.symbol_name.clone())
+        .collect();
+    assert_eq!(
+        custom_order,
+        vec!["helper".to_string(), "session".to_string()],
+        "custom weights (symbol_name=0, chunk_text=5): the body-only `helper` ranks first"
+    );
+
+    assert_ne!(
+        default_order, custom_order,
+        "QueryOptions.bm25_weights must change the retriever's returned ordering"
     );
 }

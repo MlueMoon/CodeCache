@@ -449,3 +449,88 @@ fn serve_is_a_clean_stub() {
         .stderr(contains("panicked").not())
         .stdout(contains("panicked").not());
 }
+
+// ===========================================================================
+// R2.2a — D24: `query --bm25-weights "<7 csv f64>"` (RED).
+//
+// A CLI-reachable per-column BM25 weight override so the R2 harness can sweep
+// ranking weights across `codecache query` calls WITHOUT recompiling. The flag
+// takes 7 comma-separated f64 in `schema::CREATE_SYMBOLS` indexed-column order
+// [symbol_name, symbol_type, chunk_text, parent_symbol, imports, cross_references,
+// file_docstring]. Absent ⇒ the built-in default (10,1,1,5,2,2,2). Malformed
+// (wrong arity, non-numeric, empty) ⇒ a clean typed error → NONZERO exit + a
+// stderr message, NEVER a panic.
+//
+// RED rationale: the `query` subcommand has no `--bm25-weights` arg yet, so clap
+// rejects it as an unknown flag (nonzero) — `query_accepts_bm25_weights_flag`'s
+// `.success()` therefore FAILS for the right reason (arg not implemented).
+// `query_help_lists_bm25_weights_flag` fails because help omits the flag. The
+// malformed-input tests are written to be GREEN-on-arrival ONCE the flag exists
+// (an unknown flag is already nonzero today), but their no-panic + non-empty-
+// stderr contract is the lock-in the eng-lead's typed-error parse must satisfy.
+// ===========================================================================
+
+#[test]
+fn query_help_lists_bm25_weights_flag() {
+    // Parsing layer: `query --help` must advertise the new flag (pins the flag NAME, §7.2 amend).
+    cc().args(["query", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("--bm25-weights"));
+}
+
+#[test]
+fn query_accepts_bm25_weights_flag() {
+    // Valid 7-value vector parses and the query runs to exit 0 on an indexed fixture, still
+    // surfacing the queried symbol (the override is well-formed ⇒ normal retrieval).
+    let tmp = temp_project();
+    let root = tmp.path();
+
+    cc_in(root).arg("init").assert().success();
+    cc_in(root).arg("index").assert().success();
+
+    cc_in(root)
+        .args(["query", "hash_password", "--bm25-weights", "10,1,1,5,2,2,2"])
+        .assert()
+        .success()
+        .stdout(contains("hash_password"));
+}
+
+#[test]
+fn query_bm25_weights_malformed_exits_nonzero_without_panic() {
+    // Every malformed spelling must fail cleanly: NONZERO exit, a non-empty stderr message, and NO
+    // Rust panic on either stream. Cases: too few values, too many values, non-numeric, empty.
+    let tmp = temp_project();
+    let root = tmp.path();
+
+    cc_in(root).arg("init").assert().success();
+    cc_in(root).arg("index").assert().success();
+
+    // (label, flag value) — wrong arity (3 and 8), non-numeric, and empty string.
+    let bad_values: [(&str, &str); 4] = [
+        ("too few (3 values)", "1,2,3"),
+        ("too many (8 values)", "1,2,3,4,5,6,7,8"),
+        ("non-numeric", "a,b,c,d,e,f,g"),
+        ("empty", ""),
+    ];
+
+    for (label, value) in bad_values {
+        cc_in(root)
+            .args(["query", "hash_password", "--bm25-weights", value])
+            .assert()
+            .failure()
+            // A user-facing diagnostic exists …
+            .stderr(predicate::str::is_empty().not())
+            // … and it is NOT a Rust panic / segfault on either stream.
+            .stderr(contains("panicked").not())
+            .stdout(contains("panicked").not());
+        // Re-assert per case so a failure names which malformed input slipped through.
+        cc_in(root)
+            .args(["query", "hash_password", "--bm25-weights", value])
+            .assert()
+            .failure()
+            .stderr(predicate::str::is_empty().not())
+            .stderr(contains("panicked").not());
+        let _ = label; // documents the case in source; the loop body asserts the contract.
+    }
+}

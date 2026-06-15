@@ -99,6 +99,11 @@ pub enum Command {
         /// Restrict search to files matching glob.
         #[arg(long)]
         file_filter: Option<String>,
+        /// Per-column BM25 weight override: 7 comma-separated f64 in indexed-column order
+        /// (symbol_name,symbol_type,chunk_text,parent_symbol,imports,cross_references,file_docstring).
+        /// Omitted ⇒ the built-in defaults 10,1,1,5,2,2,2 (R2.2a / D24, for the R2 weight sweep).
+        #[arg(long, value_name = "W")]
+        bm25_weights: Option<String>,
         /// Database location.
         #[arg(long, default_value = DEFAULT_DB_PATH)]
         db_path: PathBuf,
@@ -195,6 +200,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             max_results,
             format,
             file_filter,
+            bm25_weights,
             db_path,
         } => query::run(
             &query,
@@ -202,6 +208,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             max_results,
             format,
             file_filter.as_deref(),
+            bm25_weights.as_deref(),
             &db_path,
         ),
         Command::Status { db_path } => status::run(&db_path),

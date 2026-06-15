@@ -30,6 +30,10 @@ pub enum StorageError {
     /// A stored row held a value this layer could not interpret (e.g. an unknown `language` or
     /// `symbol_type` string), indicating a corrupt or forward-version row.
     CorruptRow(String),
+    /// A caller-supplied BM25 column weight was not finite (`NaN`/±`inf`). Such a value cannot be
+    /// rendered as a SQL numeric literal, so it is rejected here rather than emitted into the query
+    /// (R2.2a / D24). The CLI validates finiteness first, so this is a defensive storage-level guard.
+    NonFiniteWeight(f64),
 }
 
 impl std::fmt::Display for StorageError {
@@ -38,6 +42,9 @@ impl std::fmt::Display for StorageError {
             StorageError::Sqlite(e) => write!(f, "sqlite error: {e}"),
             StorageError::LockPoisoned => write!(f, "storage connection lock was poisoned"),
             StorageError::CorruptRow(what) => write!(f, "corrupt stored row: {what}"),
+            StorageError::NonFiniteWeight(w) => {
+                write!(f, "BM25 column weight must be finite, got {w}")
+            }
         }
     }
 }
@@ -179,15 +186,59 @@ impl Storage {
         Ok(out)
     }
 
-    /// Full-text BM25 search. Returns at most `limit` hits, best-first. An empty database (or no
-    /// match) yields an empty `Vec`, not an error.
+    /// Full-text BM25 search with the built-in default per-column weights (10,1,1,5,2,2,2). Returns
+    /// at most `limit` hits, best-first. An empty database (or no match) yields an empty `Vec`, not
+    /// an error. Delegates to [`Storage::search_with_weights`] with `None`, so this default path is
+    /// byte-identical to a caller passing `None` or `Some(&[10.,1.,1.,5.,2.,2.,2.])`.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
+        self.search_with_weights(query, limit, None)
+    }
+
+    /// Full-text BM25 search with caller-supplied per-column weights (R2.2a / D24). `weights` is one
+    /// `f64` per indexed FTS5 column, in `schema::CREATE_SYMBOLS` order (`symbol_name`, `symbol_type`,
+    /// `chunk_text`, `parent_symbol`, `imports`, `cross_references`, `file_docstring` — 7 total).
+    ///
+    /// `None` reuses the cached default [`queries::SEARCH`] verbatim, so the default path stays
+    /// byte-identical and warm in the statement cache. `Some(w)` builds the same statement with the
+    /// weights formatted into the `bm25(symbols, …)` ranking expression — FTS5's `bm25()` weights
+    /// are auxiliary-function arguments that cannot be bound as `?` parameters, so they are rendered
+    /// into the SQL text (injection-safe: each is a finite `f64`, never raw user input). The
+    /// `MATCH ?1` / `LIMIT ?2` bindings stay parameterized exactly as the default. The weighted SQL
+    /// is dynamic per weight vector, so it uses `prepare` (not the constant-keyed `prepare_cached`).
+    ///
+    /// FTS5 accepts zero and negative weights, so those pass through and rank normally. A non-finite
+    /// weight (`NaN`/±`inf`) cannot be a SQL numeric literal and is rejected as
+    /// [`StorageError::NonFiniteWeight`] rather than emitted into the query (the CLI validates this
+    /// first; this is a defensive guard). Ordering invariant is unchanged: `bm25 ASC, rowid ASC`.
+    pub fn search_with_weights(
+        &self,
+        query: &str,
+        limit: usize,
+        weights: Option<&[f64; 7]>,
+    ) -> Result<Vec<SearchResult>> {
         let conn = self.lock()?;
-        let mut stmt = conn.prepare_cached(queries::SEARCH)?;
-        let rows = stmt.query_map(params![query, limit as i64], map_search_row)?;
         let mut out = Vec::new();
-        for row in rows {
-            out.push(row??);
+        match weights {
+            None => {
+                let mut stmt = conn.prepare_cached(queries::SEARCH)?;
+                let rows = stmt.query_map(params![query, limit as i64], map_search_row)?;
+                for row in rows {
+                    out.push(row??);
+                }
+            }
+            Some(w) => {
+                for &weight in w {
+                    if !weight.is_finite() {
+                        return Err(StorageError::NonFiniteWeight(weight));
+                    }
+                }
+                let sql = queries::search_with_weights_sql(w);
+                let mut stmt = conn.prepare(&sql)?;
+                let rows = stmt.query_map(params![query, limit as i64], map_search_row)?;
+                for row in rows {
+                    out.push(row??);
+                }
+            }
         }
         Ok(out)
     }
