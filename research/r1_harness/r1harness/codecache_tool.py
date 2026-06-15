@@ -17,6 +17,7 @@ import json
 import os
 import shutil
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,6 +46,48 @@ def find_codecache_binary(repo_root: Path | None = None) -> Path:
     raise FileNotFoundError(
         "codecache binary not found. Build it with `cargo build --release`, or set $CODECACHE_BIN to its path."
     )
+
+
+#: Indexed FTS5 columns the binary's ``bm25()`` weights map to, in ``schema::CREATE_SYMBOLS``
+#: order: symbol_name, symbol_type, chunk_text, parent_symbol, imports, cross_references,
+#: file_docstring. The ``--bm25-weights`` flag (R2.2a / D24) takes exactly this many
+#: comma-separated numbers; the binary validates again and remains the source of truth.
+N_BM25_COLUMNS = 7
+
+
+def build_query_args(
+    query: str,
+    *,
+    max_tokens: int = 4000,
+    max_results: int = 20,
+    bm25_weights: Sequence[float] | None = None,
+) -> list[str]:
+    """Build the ``codecache query`` argv (sans the binary path) for JSON output.
+
+    With ``bm25_weights`` omitted, no ``--bm25-weights`` flag is emitted — the binary uses its
+    built-in per-column defaults, the byte-identical default path (R2.2a). When supplied, the
+    vector must have exactly :data:`N_BM25_COLUMNS` entries; since the sweep generates these
+    programmatically, a wrong-length vector raises ``ValueError`` here rather than surfacing as
+    an opaque subprocess failure. Each weight is normalised to ``float`` and comma-joined.
+    """
+    args = [
+        "query",
+        query,
+        "--format",
+        "json",
+        "--max-tokens",
+        str(max_tokens),
+        "--max-results",
+        str(max_results),
+    ]
+    if bm25_weights is not None:
+        if len(bm25_weights) != N_BM25_COLUMNS:
+            raise ValueError(
+                f"bm25_weights must have exactly {N_BM25_COLUMNS} entries "
+                f"(one per indexed FTS5 column), got {len(bm25_weights)}"
+            )
+        args += ["--bm25-weights", ",".join(str(float(w)) for w in bm25_weights)]
+    return args
 
 
 @dataclass
@@ -92,16 +135,21 @@ class CodeCacheIndex:
         if cp.returncode != 0:
             raise RuntimeError(f"codecache index failed ({cp.returncode}): {cp.stderr.strip()}")
 
-    def query(self, query: str, *, max_tokens: int = 4000, max_results: int = 20) -> QueryResult:
+    def query(
+        self,
+        query: str,
+        *,
+        max_tokens: int = 4000,
+        max_results: int = 20,
+        bm25_weights: Sequence[float] | None = None,
+    ) -> QueryResult:
         cp = self._run(
-            "query",
-            query,
-            "--format",
-            "json",
-            "--max-tokens",
-            str(max_tokens),
-            "--max-results",
-            str(max_results),
+            *build_query_args(
+                query,
+                max_tokens=max_tokens,
+                max_results=max_results,
+                bm25_weights=bm25_weights,
+            )
         )
         if cp.returncode != 0:
             raise RuntimeError(f"codecache query failed ({cp.returncode}): {cp.stderr.strip()}")
