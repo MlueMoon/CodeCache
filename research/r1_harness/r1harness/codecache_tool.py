@@ -135,6 +135,19 @@ class CodeCacheIndex:
         if cp.returncode != 0:
             raise RuntimeError(f"codecache index failed ({cp.returncode}): {cp.stderr.strip()}")
 
+    def ingest(self, chunks_path: "Path | str") -> None:
+        """Ingest pre-chunked records from a D25 JSON file, bypassing the native chunker.
+
+        Shells ``codecache ingest <chunks_path>`` via the existing ``_run`` seam (D25/R2.3a).
+        Raises ``RuntimeError`` if the subprocess exits non-zero, mirroring ``init``/``index``.
+
+        Args:
+            chunks_path: path to a JSON file containing a top-level array of D25 ingest records.
+        """
+        cp = self._run("ingest", str(chunks_path))
+        if cp.returncode != 0:
+            raise RuntimeError(f"codecache ingest failed ({cp.returncode}): {cp.stderr.strip()}")
+
     def query(
         self,
         query: str,

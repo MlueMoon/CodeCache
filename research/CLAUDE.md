@@ -6,9 +6,16 @@ binary). The main session drove **R1** (D22). The `principal-engineering-manager
 (scope/DoD/doc-sync) and the `code-reviewer` is the independent APPROVE/BLOCK gate.
 
 ## What lives here
-- `r1_harness/` — the R1 eval harness: a fork of mini-SWE-agent (Python) that runs the
-  same-agent retrieval-interface ablation (arms A0/A1/A4) against the built `codecache` binary and
-  scores Layer-1/Layer-2 metrics from trajectory logs. See `r1_harness/README.md`.
+- `r1_harness/` — the shared research harness (Python). Holds **both** tracks (one package, `r1harness/`):
+  - **R1 eval harness** — a fork of mini-SWE-agent that runs the same-agent retrieval-interface ablation
+    (arms A0/A1/A4) against the built `codecache` binary and scores Layer-1/Layer-2 metrics from trajectory
+    logs. See `r1_harness/README.md`.
+  - **R2 offline ablation apparatus** (D23) — pure, binary-via-process-boundary modules that reuse the same
+    `corpus.py`/`scorer.py`/`codecache_tool.py`: `scorer.py` (NDCG@10, R2.1), `sweep.py`+`run_sweep.py` (BM25
+    weight sweep, R2.2b), and `chunkers.py`+`ab_runner.py`+`run_ab.py` (R2.3b stub chunker + native-vs-stub
+    A/B plumbing over the D25 `codecache ingest` seam — holds storage/FTS5/retriever/enrichment constant so
+    the chunker is the only ablated axis; astchunk/cAST drops into the same plumbing at the gated R2.6).
+    Real-run outputs land under `r1_harness/runs/`.
 
 ## Rules (different from the Rust crate)
 - **Out-of-crate, research-only.** Nothing here is a Rust dependency, ships in a release artifact,

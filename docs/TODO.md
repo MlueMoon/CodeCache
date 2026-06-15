@@ -383,8 +383,8 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
               cross-reference, not name (verified — `authenticate_user` falls rank 2→4 on the session-token
               query). Recall@10 saturates (top-10 ≈ whole ≤9-chunk corpus) ⇒ the micro-suite can't separate
               reasonable weightings — the empirical case for the gated real corpus (R2.5–R2.7). → R2.4 emits the formal table.
-      - [~] **R2.3 (UNGATED) chunker-swap seam** — sliced **R2.3a (crate ingestion seam, DONE)** + **R2.3b
-            (harness stub chunker + A/B plumbing, NEXT)**. **R2.3a DONE 2026-06-14 — code-reviewer APPROVED**
+      - [x] **R2.3 (UNGATED) chunker-swap seam — COMPLETE 2026-06-15** — sliced **R2.3a (crate ingestion seam, DONE)** + **R2.3b
+            (harness stub chunker + A/B plumbing, DONE)**. **R2.3a DONE 2026-06-14 — code-reviewer APPROVED**
             (independently re-ran gates; 0 blockers) (D25 adopted; spec amended §3.2.4/§7 BEFORE code): hidden
             `codecache ingest <CHUNKS_JSON>` + `app::ingest_chunks` + format-local DTO→`Chunk` (serde off
             `types::Chunk`, D4/D5) → `insert_chunks` in array order + `files_metadata` rows + restamp totals;
@@ -393,6 +393,20 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
             the main session: the orchestrating manager subagent hit a session limit mid-GREEN; RED state was
             clean.) → R2.3b (pure `research/`, reuses `corpus.py`) → research-harness-engineer. Brief:
             `.claude/briefs/BRIEF-R2.3a-chunk-ingestion-seam.md`.
+            **R2.3b DONE 2026-06-15 — code-reviewer APPROVED** (0 blockers, 0 majors, 2 cosmetic nits;
+            reviewer independently re-ran ruff + pytest, recomputed the offset invariant from the fixture,
+            confirmed the no-winner property + scope discipline): `r1harness/chunkers.py` (`stub_chunk` +
+            `dump_chunks`) + `r1harness/ab_runner.py` (`run_ab`) + `run_ab.py` entrypoint +
+            `CodeCacheIndex.ingest(chunks_path)` adapter in `codecache_tool.py`; 19 new tests (13 chunker /
+            6 ab_runner) green (pure-logic backbone 15 + 4 binary-dependent that RAN, not skipped); the stub
+            chunker synthesizes materialize-consistent UTF-8 byte / 1-based-inclusive line offsets (invariant:
+            `reconstructed_file[start:end] == chunk_text.encode()` for every chunk); A/B runner yields one
+            comparable scored row per arm (native init→index→query vs stub init→ingest→query) over the same
+            corpus + same scorer + same gold — **no winner asserted** (outcome-agnostic, overview §7);
+            equivalence sanity #1 (gold `authenticate_user` retrieved through the D25 ingest seam) + #2 (two
+            rows per arm) RAN (Linux debug binary built from the crate — the only Linux-runnable binary on this
+            WSL2 machine); ruff clean; `Cargo.toml`/`src/`/Rust-`tests/` untouched. Brief:
+            `.claude/briefs/BRIEF-R2.3b-stub-chunker-ab-plumbing.md`. → R2.4 next.
       - [ ] **R2.4 (UNGATED) ablation-table reporter** — pure deterministic emit of {chunking × weights ×
             enrichment} results + top-config selection (extends `report.py`'s pattern). → research-harness-engineer
       - [ ] **R2.5 (GATED: license #1 + network/HF #2) external-corpus loader** — map CodeRAG-Bench RepoEval
