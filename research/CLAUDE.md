@@ -14,7 +14,8 @@ binary). The main session drove **R1** (D22). The `principal-engineering-manager
     `corpus.py`/`scorer.py`/`codecache_tool.py`: `scorer.py` (NDCG@10, R2.1), `sweep.py`+`run_sweep.py` (BM25
     weight sweep, R2.2b), `chunkers.py`+`ab_runner.py`+`run_ab.py` (R2.3b stub chunker + native-vs-stub
     A/B plumbing over the D25 `codecache ingest` seam — holds storage/FTS5/retriever/enrichment constant so
-    the chunker is the only ablated axis; astchunk/cAST drops into the same plumbing at the gated R2.6),
+    the chunker is the only ablated axis), `astchunk_chunker.py`+`run_ab_astchunk.py` (R2.6 cAST baseline —
+    the astchunk/cAST chunker dropped into that same A/B plumbing, native-vs-astchunk; D28),
     `ablation_report.py`+`run_report.py` (R2.4 ablation-table reporter — aggregates sweep + A/B into a single
     Markdown view with n_queries-weighted A/B aggregation, directional top-config selection, and scope-honesty
     disclaimer; pure core + thin loaders + entrypoint), and `contextbench.py`+`fetch_contextbench.py`
@@ -53,14 +54,22 @@ PYTHONUTF8=1 research/r1_harness/.venv/bin/pytest research/r1_harness/
 research/r1_harness/.venv/bin/ruff check research/
 research/r1_harness/.venv/bin/ruff format --check research/
 ```
-Note: `datasets` and `huggingface_hub` are pinned in `requirements.txt` but are **NOT installed**
-in the venv as of R2.5a-rev (the venv contains only pytest + ruff). They are required only for
-the fetch entrypoint (`fetch_contextbench.py`); the core mapper and test suite are hermetic and
-do NOT import them. Install only when ready to run the fetch entrypoint:
+Note: `datasets` and `huggingface_hub` are pinned in `requirements.txt` but are **fetch-entrypoint
+only** (`fetch_contextbench.py`); the core mapper and test suite are hermetic and do NOT import
+them, so the suite stays green whether or not they are installed. Install only when ready to run
+the fetch entrypoint:
 ```
 research/r1_harness/.venv/bin/pip install datasets==5.0.0 huggingface_hub==1.19.0
 ```
-The test suite remains hermetic (green) whether or not these deps are installed.
+
+**Venv requirement (HARD, R2.6).** Running the test suite **requires the venv with
+`requirements.txt` installed** — as of R2.6 the suite depends on **`astchunk`** (MIT) + its
+Tree-sitter transitives, and the R2.6 astchunk tests **import `astchunk` at runtime** and **FAIL
+on the system `python3`** (which lacks the dep). Always run via the venv Python:
+```
+PYTHONUTF8=1 research/r1_harness/.venv/bin/python -m pytest research/r1_harness/
+```
+Green baseline = **138 passed, 1 skipped** (the skip = the Windows-only path test).
 
 ## External-corpus provenance (R2.5a, D26)
 **ContextBench-Lite** (`r1harness/contextbench.py`, `fetch_contextbench.py`):
@@ -87,3 +96,8 @@ The test suite remains hermetic (green) whether or not these deps are installed.
 ## Update rule
 Code change here ⇒ update `docs/TODO.md` (research-track section) in the same change, mirroring the
 crate's golden rule.
+
+**Run the suite from the venv** (`PYTHONUTF8=1 research/r1_harness/.venv/bin/python -m pytest
+research/r1_harness/`), not the system `python3` — since R2.6 the suite depends on `astchunk` (MIT)
+and FAILS without it. Green baseline = **138 passed, 1 skipped**. Full canonical run + the ruff
+gates are in `docs/TESTING_AND_USAGE.md` §3.0.

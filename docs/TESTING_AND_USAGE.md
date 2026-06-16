@@ -152,12 +152,34 @@ same-agent retrieval-interface ablation — **A0** (grep only), **A1** (+ `codec
 (one-shot top-k injection) — and scores Layer-1 (Recall/Precision/F1) + Layer-2 (tokens &
 turns-to-coverage) from trajectory logs.
 
+### 3.0 The research suite needs a venv with `requirements.txt` (R2.5a+/R2.6)
+**The research test suite (`research/r1_harness`) requires a Python virtual environment with
+`research/r1_harness/requirements.txt` installed.** As of R2.5a it depends on
+`datasets`/`huggingface_hub` (pinned but fetch-entrypoint-only — the test suite is hermetic and
+does not import them) and as of **R2.6** it depends on **`astchunk`** (MIT) and its Tree-sitter
+transitives — the R2.6 astchunk tests **import `astchunk` at runtime** and **FAIL on a system
+Python that lacks it**. Do **not** run the suite with the system `python3`.
+
+Canonical run (Linux/WSL; mirrors the Windows `C:\ccr1` pattern):
+```bash
+python3 -m venv research/r1_harness/.venv          # one-time (.venv is gitignored)
+research/r1_harness/.venv/bin/pip install -r research/r1_harness/requirements.txt
+PYTHONUTF8=1 research/r1_harness/.venv/bin/python -m pytest research/r1_harness/
+```
+Green baseline: **138 passed, 1 skipped** (the skip = the Windows-only path test). The ruff gates:
+```bash
+research/r1_harness/.venv/bin/ruff check research/
+research/r1_harness/.venv/bin/ruff format --check research/
+```
+
 ### 3.1 Pure unit tests (no agent, no API, no network)
-The scorer / trajectory / corpus / extractor tests need only the stdlib + pytest:
+The scorer / trajectory / corpus / extractor tests need only the stdlib + pytest (the
+astchunk/R2.6 tests additionally need `astchunk` from the venv above — run them from the venv):
 ```bash
 cd research/r1_harness
-python -m pytest          # 39 tests: scorer (mirrors retrieval_quality.rs), trajectory,
-                          # corpus, codecache_tool parsing, extractor, scoring regression
+.venv/bin/python -m pytest   # scorer (mirrors retrieval_quality.rs), trajectory, corpus,
+                             # codecache_tool parsing, extractor, sweep, A/B, NDCG,
+                             # contextbench loader, astchunk chunker (R2.6)
 ```
 The `codecache_tool` and end-to-end paths use the built binary (build it first, or set
 `$CODECACHE_BIN`).

@@ -747,6 +747,49 @@ PyPI dependency (R2.6) is the next human gate — NOT yet granted.** Owner: mana
 sync) → research-harness-engineer (R2.6 build, once the astchunk dep is human-approved). Brief:
 `.claude/briefs/BRIEF-R2.5-external-corpus-loader.md` (R2.5b section marked CANCELLED per D27).
 
+### D28 — R2.6 astchunk/cAST baseline chunker: native vs astchunk TIE at file level (Recall@10 saturation), block-level diverges  · **Adopted 2026-06-15 (R2.6 closeout, reviewer-APPROVED)** (plan: research track R2.6; builds on D23 gate #3 + D25 ingest seam + D27 softened exit) — *overview §5.3, §7*
+
+R2.6 replaces the R2.3b stub chunker with the **astchunk** PyPI package (cAST baseline; **MIT,
+0.1.0** — the **D23 gate #3 dependency, human-GRANTED**) dropped into the **same** R2.3b A/B
+plumbing over the **D25 `codecache ingest` seam**, so storage + FTS5-BM25 + retriever + enrichment
+are held constant and the chunker is the only ablated axis. `r1harness/astchunk_chunker.py` wraps
+`astchunk.ASTChunkBuilder` → materialize-consistent D25 ingest records (synthesised
+`"{file}::L{start}-L{end}"` symbol names, a `function` sentinel `symbol_type`, all enrichment
+defaulted — astchunk emits none); `run_ab_astchunk.py` is the entrypoint and `ab_runner.py` drives
+the native-vs-astchunk A/B over the same scorer + same gold. astchunk 0.1.0 supports
+**Python/TypeScript only** → **Go is skipped** (no grammar). Pure `research/`, **zero crate change,
+zero spend**; `Cargo.toml`/`src/`/Rust-`tests/`/`.claude/settings.json` untouched.
+
+**Result (directional, PROXY — NOT a published finding; n=10 over python+typescript).** At
+**file-level granularity native and astchunk TIE**: NDCG@10 file = **0.800**, Recall@10 file =
+**0.800**, F1@10 file = **0.413** — driven by **Recall@10 saturation** (top-10 ≈ the whole ≤9-chunk
+micro-suite corpus, the same saturation D21/D23/D24/the R2.4 reporter found for the weight sweep).
+But the **block-level metric diverges** (native **0.800** vs astchunk **0.000**) because astchunk's
+synthesized `file::L{s}-L{e}` block keys cannot match gold function-name keys — proving the two arms
+**genuinely chunk differently**, so the file-level tie is a **corpus-size artifact, not a no-op**.
+This is the empirical case (already argued in D23/D27) that a **real corpus is required to separate
+the chunkers** — it **sets the stage for R2.7** (the softened-exit real-corpus ablation over
+ContextBench-Lite, D27, now carrying the astchunk chunker as the chunker axis).
+
+**Dependency + hermeticity.** astchunk verified **MIT** and pinned in
+`research/r1_harness/requirements.txt` with its Tree-sitter transitives (tree-sitter 0.25.2,
+tree-sitter-python 0.25.0, tree-sitter-typescript 0.23.2, numpy, pyrsistent; java/c-sharp grammars
+pulled but unused). Unlike the R2.5a fetch deps, **astchunk is imported at test runtime**, so the
+research suite now **requires the venv** (`research/r1_harness/.venv`) — it FAILS on the bare system
+`python3`. Green baseline = **138 passed, 1 skipped** (the skip = the Windows-only path test); ruff
+check + format clean. Env requirement documented in `docs/TESTING_AND_USAGE.md` §3.0 + `research/CLAUDE.md`.
+
+**Reviewer APPROVE, 0 blockers** (independently re-ran the venv suite + ruff, recomputed the
+byte-offset invariant including the TS space-padded fallback path — benign because `chunk_text` is
+the FTS5-indexed column while `start/end_byte` are UNINDEXED tie-break-only, confirmed the D25 field
+set matches the Rust `IngestChunk` DTO, verified no crate touch). Three NON-blocking findings tracked
+in `docs/TODO.md`: (#1, optional hardening) whitespace-only input yields a degenerate zero-width
+record violating the wrapper's own `end_byte>start_byte` property — **not reachable in the actual
+run** (both corpora produce 0 such records); (#2) the TODO doc-sync, reconciled by this commit; (#3
+nit) a test re-defines a production helper locally. Cross-references **D23** (R2 staging + gate #3),
+**D25** (the ingest seam this rides), **D27** (the softened exit + R2.7 next). Owner: manager (this
+decision + doc-sync) + research-harness-engineer (R2.6 build) + code-reviewer (APPROVE).
+
 ---
 
 ## Deferred to v0.2+ (from project_plan §9.2)

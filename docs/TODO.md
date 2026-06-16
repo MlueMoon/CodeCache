@@ -344,7 +344,7 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
             corrupted Recall@1; +regression test). **R1 exit now met LIVE — no arm-winner claim (that is R3).**
 - [~] **R2 offline ablations** (D23 adopted 2026-06-14; owner: research-harness-engineer; ungated R2.1–R2.4
       DONE; external-corpus gates ratified D26 2026-06-15 — R2.5 complete-as-R2.5a; **R2.5b CUT, R2 exit
-      softened — D27 2026-06-15**; R2.6 NEXT but GATED on astchunk dep):
+      softened — D27 2026-06-15**; **R2.6 DONE 2026-06-15 — astchunk dep GRANTED, D28**; R2.7 NEXT):
       chunking × ranking × enrichment, Layer-1 only, zero LLM/agent/paid spend. **Exit (softened — D27):** run
       the real-corpus Layer-1 ablation over **ContextBench-Lite** (R2.5a, DONE) + cite CodeRAG-Bench's
       published **BM25 NDCG@10 = 0.932** qualitatively (NOT a ±0.03 in-repo reproduction) + pick top configs.
@@ -459,14 +459,36 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
               (HF Hub API `cardData.license` + tags + README front-matter — the GitHub repo's missing LICENSE file was
               a red herring; it governs code, not the HF data), closing the prior "confirm LICENSE first" open item.
               ContextBench-Lite (R2.5a) already gives a clean real-corpus ablation. See ROADMAP **D27**. → no owner (cut)
-      - [ ] **R2.6 (GATED: astchunk dep #3 — NOT yet granted) cAST baseline chunker — NEXT** — replace the R2.3
-            stub with the astchunk PyPI package (MIT, research-only). **Next human gate: approve the astchunk PyPI
-            dependency** (D23 gate #3). With R2.5b cut (D27), R2.6 is the next research step. → research-harness-engineer
-      - [ ] **R2.7 baseline-reproduction + exit run — SOFTENED (D27, 2026-06-15)** — **no ±0.03 in-repo
+      - [x] **R2.6 (astchunk dep #3 — GRANTED) cAST baseline chunker — DONE 2026-06-15 — code-reviewer APPROVED**
+            (0 blockers; reviewer independently re-ran the suite in the project venv → **138 passed, 1 skipped**;
+            ruff check + format clean; byte-offset invariant sound incl. the TS space-padded fallback path — benign
+            because `chunk_text` is the FTS5-indexed column and `start/end_byte` are UNINDEXED tie-break-only; D25
+            field set matches the Rust `IngestChunk` DTO; no `src/`/`Cargo`/`.rs` touched). The **astchunk PyPI
+            dependency (D23 gate #3) was human-granted** (astchunk 0.1.0, MIT; pinned in `requirements.txt` with its
+            Tree-sitter transitives). `r1harness/astchunk_chunker.py` wraps `astchunk.ASTChunkBuilder` →
+            materialize-consistent D25 ingest records (synthesised `file::L{s}-L{e}` symbol names, `function`
+            sentinel symbol_type, all enrichment defaulted — astchunk emits none) + `run_ab_astchunk.py` entrypoint;
+            `ab_runner.py` extended to drive the native-vs-astchunk A/B over the D25 `ingest` seam, same scorer + same
+            gold. astchunk supports Python/TypeScript only → **Go skipped** (no grammar). **Result (file-level
+            ablation, n=10 over python+typescript):** native and astchunk **TIE** — NDCG@10 file = 0.800, Recall@10
+            file = 0.800, F1@10 file = 0.413 — due to **Recall@10 saturation** over the ≤9-chunk micro-suite corpora;
+            **block-level diverges** (native 0.800 vs astchunk 0.000 — astchunk's synthesized `file::L{s}-L{e}` block
+            keys can't match gold function-name keys), confirming the arms genuinely differ and the tie is a
+            corpus-size artifact, **not a no-op**. Sets the stage for **R2.7** (a real corpus is needed to separate
+            the chunkers). See Decision Log **D28**. Pure `research/`, zero crate change, zero spend.
+            → research-harness-engineer. Brief trail: `.claude/briefs/BRIEF-R2-offline-ablations.md`.
+        - [ ] **R2.6 follow-up (review finding #1, optional hardening — TRACKED, not now):** whitespace-only input
+              yields a degenerate zero-width record (`chunk_text=""`, `start_byte==end_byte==0`), violating the
+              wrapper's own `end_byte>start_byte` property — **not reachable in the actual run** (both corpora produce
+              0 such records). Suggested fix: skip chunks where `not chunk_text.strip()`. → research-harness-engineer
+        - [ ] **R2.6 nit (review finding #3, ignore-or-track):** a test re-defines `_astchunk_chunk_corpus` locally
+              instead of importing the production helper — cosmetic; not worth churn. → research-harness-engineer
+      - [ ] **R2.7 baseline-reproduction + exit run — NEXT — SOFTENED (D27, 2026-06-15)** — **no ±0.03 in-repo
             reproduction** (R2.5b CUT). Run the real-corpus Layer-1 ablation over **ContextBench-Lite** (R2.5a) +
-            the ~12-cell grid + cite CodeRAG-Bench's published **BM25 NDCG@10 = 0.932** qualitatively (paper Table 3,
-            arXiv:2406.14497) + promote top configs. Satisfies the softened R2 exit. → research-harness-engineer +
-            manager (exit verify)
+            the ~12-cell grid (now with the R2.6 astchunk arm as the chunker axis) + cite CodeRAG-Bench's published
+            **BM25 NDCG@10 = 0.932** qualitatively (paper Table 3, arXiv:2406.14497) + promote top configs. The R2.6
+            file-level tie over the micro-suite (D28) is the empirical case that the **real corpus** is what
+            separates the chunkers. Satisfies the softened R2 exit. → research-harness-engineer + manager (exit verify)
 - [ ] **R3 agent-in-loop study**: full A0–A5 matrix on 30–50 tasks → promote winners to 100;
       budget/scale sweeps; RQ1–RQ3 plots with CIs; ~$1K API line item → manager + perf
 - [ ] **R4 write-up & release**: preprint + artifact (binary, harness, trajectories); blog;

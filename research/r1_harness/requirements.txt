@@ -17,6 +17,19 @@ mini-swe-agent==2.4.1
 datasets==5.0.0
 huggingface_hub==1.19.0
 
+# R2.6 cAST baseline chunker — astchunk PyPI package (MIT, research-only).
+# astchunk 0.1.0 (verified 2026-06-15; MIT license confirmed).
+# Transitives pinned: tree-sitter 0.25.2, tree-sitter-python 0.25.0,
+# tree-sitter-typescript 0.23.2, numpy 2.4.6, pyrsistent 0.20.0.
+# tree-sitter-java and tree-sitter-c-sharp are also pulled in by astchunk but
+# are unused in CodeCache research (Java/C# corpora not present).
+astchunk==0.1.0
+tree-sitter==0.25.2
+tree-sitter-python==0.25.0
+tree-sitter-typescript==0.23.2
+numpy==2.4.6
+pyrsistent==0.20.0
+
 # Dev / test:
 pytest>=8.0
 ruff>=0.15        # lint + format gate for the research tree (ROADMAP D23)
