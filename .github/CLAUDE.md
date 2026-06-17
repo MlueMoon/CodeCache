@@ -38,8 +38,8 @@ Caching is mandatory — `rusqlite` `bundled` + tree-sitter grammars compile C (
 - **Trigger:** `on.push.tags: ["v*"]` ONLY. NOT on push/PR. Tag push is the human go-ahead signal.
 - **Jobs (in order):** `install-smoke-test` (matrix: ubuntu/macos/windows — fmt + clippy + test + build --release + init→index→query fixture) → `publish` (ubuntu; `cargo publish` gated on `CARGO_REGISTRY_TOKEN` secret) + `release-binaries` (matrix: upload platform binary to GitHub Release via `softprops/action-gh-release@v2`). Publish and release-binaries both `needs: install-smoke-test`; a broken binary never reaches crates.io.
 - **Security:** `CARGO_REGISTRY_TOKEN` is a repository secret (set in Settings → Secrets → Actions). Binary upload uses the auto-provisioned `GITHUB_TOKEN` with `contents: write`. No plaintext secrets.
-- **CRITICAL PLACEHOLDER:** `Cargo.toml repository = "https://github.com/EunHo-Lee/codecache"` is a best-guess canonical placeholder. crates.io permanently records this per version. Human MUST verify/correct before pushing the v0.1.0 tag.
-- **NAME CONFLICT WARNING:** `cargo publish --dry-run` reported `crate codecache@0.1.0 already exists on crates.io index`. The human must verify whether the name `codecache` is taken. If it is, a crate name change is required before publish.
+- **Repository URL — SET 2026-06-17 (was placeholder):** `Cargo.toml repository = "https://github.com/AdvancedUno/codecache"`, confirmed final by the human (blocker #2 resolved). crates.io records this permanently per version.
+- **Name conflict — RESOLVED 2026-06-17 (D30):** `codecache` was taken on crates.io, so the package was renamed `codecache-rs` (the binary stays `codecache`). `cargo publish --dry-run` is green under the new name.
 
 ## Status
 M0: `ci.yml` landed (single `gates` job, three steps).

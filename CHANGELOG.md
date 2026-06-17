@@ -9,6 +9,16 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **Package renamed `codecache` → `codecache-rs`** for crates.io publication (the name `codecache`
+  was already registered). The installed **binary remains `codecache`** — `cargo install codecache-rs`
+  produces a `codecache` binary (crate name ≠ binary name, the ripgrep model), so CLI usage and MCP
+  config are unchanged. (Decision Log D30.)
+- **Published crate scoped to product code** via a `[package]` `include` allowlist: the crates.io
+  tarball ships `src/`, benches, examples, and README/licenses/CHANGELOG only — `research/`,
+  `.claude/`, and `docs/` are excluded so they never reach the permanent public registry tarball.
+  (Decision Log D31.)
+
 ---
 
 ## [0.1.0] - 2026-06-12
@@ -107,5 +117,5 @@ returns a clean error and exits non-zero. Stdio is the only supported transport.
 
 ---
 
-[Unreleased]: https://github.com/EunHo-Lee/codecache/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/EunHo-Lee/codecache/releases/tag/v0.1.0
+[Unreleased]: https://github.com/AdvancedUno/codecache/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/AdvancedUno/codecache/releases/tag/v0.1.0

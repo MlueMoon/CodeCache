@@ -24,7 +24,7 @@ cargo install codecache-rs   # the crate is `codecache-rs`; it installs a binary
 **Option B: Build from source**
 
 ```bash
-git clone https://github.com/EunHo-Lee/codecache
+git clone https://github.com/AdvancedUno/codecache
 cd codecache
 cargo build --release
 # The binary is at target/release/codecache (or target/release/codecache.exe on Windows).

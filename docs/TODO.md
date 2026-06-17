@@ -325,12 +325,11 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
               stays **224**-green. README test count also corrected stale **196 → 224**.
               Validated (Rust 1.85.0): `cargo package --list` = 52 files (leak-guard clean);
               full `cargo publish --dry-run` compiled from the trimmed tarball, exit 0.
-        - [~] (2) set the real `repository` URL in `Cargo.toml` — **partially addressed
-              2026-06-17:** human hand-edited the URL to `https://github.com/AdvancedUno/codecache`
-              (replacing the prior `github.com/EunHo-Lee/codecache` placeholder). **Pending human
-              confirmation that `AdvancedUno/codecache` is the final publish remote** before tag
-              push; the `# PLACEHOLDER` comment above the line is now likely stale (flag — main
-              session to soften/remove with the same commit).
+        - [x] (2) **set the real `repository` URL — DONE 2026-06-17:** human set + confirmed
+              `https://github.com/AdvancedUno/codecache` as the final publish remote (replacing the
+              `EunHo-Lee/codecache` placeholder). `Cargo.toml` PLACEHOLDER comment removed; the stale
+              clone/link URLs in `project_plan.md` / `CLAUDE_CODE_SETUP.md` / `CHANGELOG.md` swept to
+              match. Blockers #3 (`CARGO_REGISTRY_TOKEN`) and #4 (`v0.1.0` tag push) remain human-gated.
         - [ ] (3) set the `CARGO_REGISTRY_TOKEN` repo secret;
         - [ ] (4) push the `v0.1.0` tag to trigger `release.yml`.
 

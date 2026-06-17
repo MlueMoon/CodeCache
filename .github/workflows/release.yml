@@ -3,15 +3,15 @@
 # HUMAN-GATED: This workflow ONLY runs when a human explicitly pushes a version tag (e.g. v0.1.0).
 # CI does NOT create tags automatically. The tag push is the human go-ahead signal.
 # Before pushing the tag, the human must:
-#   1. Confirm/correct the `repository` field in Cargo.toml (currently a placeholder — see below).
+#   1. (DONE 2026-06-17) `repository` in Cargo.toml is set to https://github.com/AdvancedUno/codecache.
 #   2. Set the CARGO_REGISTRY_TOKEN secret in the repository settings.
 #   3. Run `cargo publish --dry-run` one final time to verify packaging.
 #   4. Push the tag: git tag v0.1.0 && git push origin v0.1.0
 #
-# PLACEHOLDER WARNING: Cargo.toml `repository = "https://github.com/EunHo-Lee/codecache"` is a
-# best-guess canonical placeholder. crates.io permanently records this value per version; the human
-# MUST verify and correct it to the real repository URL before the real `cargo publish` runs.
-# Correcting it after publish requires a yanked version + re-publish under a patch bump.
+# REPOSITORY URL (resolved 2026-06-17): Cargo.toml `repository = "https://github.com/AdvancedUno/codecache"`
+# is set and confirmed final. crates.io records this value permanently per version; correcting it after
+# publish would require a yanked version + re-publish under a patch bump. The crate publishes as
+# `codecache-rs` (the package name); the installed binary is `codecache`.
 #
 # WORKFLOW OVERVIEW:
 #   1. install-smoke-test (matrix: ubuntu/macos/windows) — build --release, run init→index→query on

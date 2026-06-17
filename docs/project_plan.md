@@ -1835,7 +1835,7 @@ tempfile = "3.10"  # Testing
 
 **For new contributors:**
 
-1. **Clone repo**: `git clone https://github.com/your-org/codecache.git`
+1. **Clone repo**: `git clone https://github.com/AdvancedUno/codecache.git`
 2. **Install Rust**: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 3. **Build**: `cargo build --release`
 4. **Run tests**: `cargo test`
