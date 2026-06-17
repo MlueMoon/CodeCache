@@ -885,6 +885,52 @@ command are updated to `codecache-rs` in the same change; README/CHANGELOG packa
 touch-ups are deferred to the (separate, not-yet-approved) release-polish pass. Owner: manager (this
 decision + doc-sync) + main session (the validated `Cargo.toml`/`Cargo.lock` change + local commit).
 
+### D31 — Published-crate `include` allowlist: trim the crates.io tarball to product code only (234 → 52 files)  · **Adopted 2026-06-17 (M10.4 release-prep; validated green)** (plan: M10.4 — leak-proof publish, complements the curated-public-repo plan) — *spec: §10.3 (`[package] include`)*
+
+The M10.4 `cargo publish --dry-run` packaged **234 files** — the **entire repo**, including all of
+`research/` (46 files: the paper-pending ablation harness + corpus loaders), `.claude/` (41 files:
+the agent definitions, briefs, hooks, settings), and `docs/` (22 files). A **crates.io tarball is
+permanent and public** (it cannot be unpublished), so publishing as-is would have **leaked** the
+unreleased research track and the internal agent tooling to the world the moment `cargo publish` ran.
+
+**Decision: add an anchored, root-relative `include = [...]` to `Cargo.toml [package]`** that ships
+ONLY product code. Final set: `src/**/*.rs` + `src/**/*.scm` (the Tree-sitter queries),
+`benches/**/*.rs`, `examples/**/*.rs`, `/README.md`, `/LICENSE-MIT`, `/LICENSE-APACHE`,
+`/CHANGELOG.md`, `/CONTRIBUTING.md`, `/rust-toolchain.toml` (Cargo auto-adds `Cargo.toml`/`Cargo.lock`).
+Result: **52 files**, verified to contain **no** `research/`, `.claude/`, `docs/`, any `CLAUDE.md`,
+`project_overview.md`, `.venv/`, or `cache/`.
+
+**Rationale.**
+1. **Permanence + publicity of the registry tarball.** Unlike a git push (revertable, and the team is
+   already planning a *curated* public repo that withholds `research/`/`.claude/`/`docs/` until the
+   paper), a crates.io release is irreversible and immediately public. Both surfaces — the git repo
+   AND the crates.io tarball — must withhold the same things; D30 fixed the package *name*, D31 fixes
+   the package *contents*. This is the **publish-side complement** to the curated-public-repo plan.
+2. **`include` over `exclude`.** An allowlist (`include`) is fail-safe: a newly added top-level
+   directory is **excluded by default** rather than silently shipped, so future research/tooling
+   additions cannot leak without an explicit manifest edit. (`exclude` is fail-open — the wrong
+   default for a permanent public artifact.)
+
+**Gotcha worth recording (the anchored-glob trap).** Cargo's `include`/`exclude` use **gitignore-style
+globs**, where a **bare filename matches at ANY depth** — an unanchored `README.md` pattern slurped
+every nested `README.md` across the tree (including the gitignored cloned corpus repos under
+`research/`). Fixed by a **leading-`/` anchor** on each root-level pattern (`/README.md`,
+`/LICENSE-MIT`, …), which pins them to the crate root. Directory-scoped patterns stay as recursive
+`**` globs (`src/**/*.rs`).
+
+**Validation (Rust 1.85.0, 2026-06-17).** `cargo package --list` = **52 files** (leak-guard clean —
+manually confirmed no research/.claude/docs/CLAUDE.md/project_overview/.venv/cache entries); full
+`cargo publish --dry-run` **compiled from the trimmed tarball**, exit 0. The `include` is
+**packaging-only** — it does not affect the local build/test graph, so the suite stays **224**-green
+from the D30 commit. Bundled with this change: the stale README status-line test count **196 → 224**.
+
+**Disposition.** Tightens M10.4's pre-publish posture (does not itself clear a human-gated blocker —
+those remain #2 real `repository` URL [now partially addressed: human set it to
+`AdvancedUno/codecache`, pending confirmation it is the final remote], #3 `CARGO_REGISTRY_TOKEN`,
+#4 tag push). Spec §10.3's `[package]` excerpt gains a brief `include` note in the same change.
+Owner: manager (this decision + doc-sync) + main session (the validated `Cargo.toml`/`README.md`
+change + local commit). Cross-references **D30** (crate rename) and the curated-public-repo plan.
+
 ---
 
 ## Deferred to v0.2+ (from project_plan §9.2)

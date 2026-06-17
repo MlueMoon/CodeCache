@@ -16,7 +16,7 @@ keep where a structured index saves the agent turns and tokens.
   with output ordered for the agent's next action; CLI-native too.
 - **v0.1 scope** — Python, TypeScript, Go. AST + BM25 (embeddings deferred to v0.2).
 
-> Status: **M0–M9 complete and green** (196 tests, four gates clean on Rust 1.85).
+> Status: **M0–M9 complete and green** (224 tests, four gates clean on Rust 1.85).
 > **v0.1.0 release staged** — Python, TypeScript, Go parsers; AST + BM25 retrieval; MCP stdio server.
 > Milestones in [`docs/ROADMAP.md`](docs/ROADMAP.md); positioning, landscape research, and the R1–R4
 > research track in [`project_overview.md`](project_overview.md).

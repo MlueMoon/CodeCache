@@ -1784,6 +1784,15 @@ Claude Code (to user):
 name = "codecache-rs"
 version = "0.1.0"
 edition = "2021"
+# Publish allowlist (ROADMAP D31): ships ONLY product code to crates.io — 52 files, no
+# research/.claude/docs/CLAUDE.md. Root-level patterns are leading-`/` anchored (cargo's
+# gitignore-style globs match a bare filename at ANY depth, else nested READMEs leak).
+include = [
+    "src/**/*.rs", "src/**/*.scm",
+    "benches/**/*.rs", "examples/**/*.rs",
+    "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE",
+    "/CHANGELOG.md", "/CONTRIBUTING.md", "/rust-toolchain.toml",
+]
 
 [dependencies]
 # CLI

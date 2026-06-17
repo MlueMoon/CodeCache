@@ -307,8 +307,30 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
               rejected (collides with the `ast-grep-*` family, incl. `ast-grep-mcp`). Validated green
               on Rust 1.85.0: `cargo build`/`clippy -D warnings` clean, **224 tests pass**,
               `cargo publish --dry-run` exit 0 (234 files / 1.3 MiB). See ROADMAP D30.
-        - [ ] (2) set the real `repository` URL in `Cargo.toml` (currently placeholder
-              `github.com/EunHo-Lee/codecache`);
+        - [x] **Publish-side `include` allowlist added (2026-06-17, D31):** `Cargo.toml`
+              `[package]` now carries an anchored, root-relative `include = [...]` so the
+              crates.io tarball ships ONLY product code — **52 files** (down from the prior
+              dry-run's 234, which packaged all of `research/` (46), `.claude/` (41), and
+              `docs/` (22)). Ships `src/**/*.rs` + `src/**/*.scm`, `benches/**/*.rs`,
+              `examples/**/*.rs`, `/README.md`, `/LICENSE-MIT`, `/LICENSE-APACHE`,
+              `/CHANGELOG.md`, `/CONTRIBUTING.md`, `/rust-toolchain.toml` (Cargo auto-adds
+              Cargo.toml/Cargo.lock). Verified to contain **no** research/.claude/docs/CLAUDE.md/
+              project_overview/.venv/cache — **leak-proof publish** (a crates.io tarball is
+              permanent + public; this withholds the paper-pending research harness + agent
+              tooling, the publish-side complement to the planned curated public git repo).
+              Gotcha (recorded D31): cargo `include` globs are gitignore-style — a **bare
+              filename matches at ANY depth**, so an unanchored `README.md` slurped every nested
+              README under `research/`; fixed with a leading-`/` anchor on each root-level
+              pattern. The `include` is packaging-only — local build/test unaffected, suite
+              stays **224**-green. README test count also corrected stale **196 → 224**.
+              Validated (Rust 1.85.0): `cargo package --list` = 52 files (leak-guard clean);
+              full `cargo publish --dry-run` compiled from the trimmed tarball, exit 0.
+        - [~] (2) set the real `repository` URL in `Cargo.toml` — **partially addressed
+              2026-06-17:** human hand-edited the URL to `https://github.com/AdvancedUno/codecache`
+              (replacing the prior `github.com/EunHo-Lee/codecache` placeholder). **Pending human
+              confirmation that `AdvancedUno/codecache` is the final publish remote** before tag
+              push; the `# PLACEHOLDER` comment above the line is now likely stale (flag — main
+              session to soften/remove with the same commit).
         - [ ] (3) set the `CARGO_REGISTRY_TOKEN` repo secret;
         - [ ] (4) push the `v0.1.0` tag to trigger `release.yml`.
 

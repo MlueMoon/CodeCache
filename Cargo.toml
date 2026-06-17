@@ -7,10 +7,29 @@ license = "MIT OR Apache-2.0"
 # PLACEHOLDER — human must verify/correct this URL before `cargo publish`.
 # crates.io permanently records `repository` per version; wrong URL requires a yank + re-publish.
 # Best-guess canonical URL below; correct it to the real remote before pushing the v0.1.0 tag.
-repository = "https://github.com/EunHo-Lee/codecache"
+repository = "https://github.com/AdvancedUno/codecache"
 readme = "README.md"
 keywords = ["ast", "tree-sitter", "retrieval", "code-search", "mcp"]
 categories = ["command-line-utilities", "development-tools"]
+# Published-crate allowlist. crates.io tarballs are PERMANENT and PUBLIC, so ship only product code
+# + license/readme/changelog. This deliberately EXCLUDES research/ (held until the paper), .claude/
+# (agent tooling), docs/, every CLAUDE.md, and project_overview.md — none of them reach crates.io.
+# An allowlist (not a denylist) so nothing added later auto-leaks. Verified via `cargo package --list`.
+include = [
+    # Leading "/" ANCHORS each pattern to the package root. Without it, cargo's gitignore-style
+    # globs match a bare filename at ANY depth — e.g. "README.md" would slurp every nested README
+    # under research/ (incl. gitignored cloned repos). Anchoring keeps the crate to product code only.
+    "/src/**/*.rs",
+    "/src/**/*.scm",
+    "/benches/**/*.rs",
+    "/examples/**/*.rs",
+    "/README.md",
+    "/LICENSE-MIT",
+    "/LICENSE-APACHE",
+    "/CHANGELOG.md",
+    "/CONTRIBUTING.md",
+    "/rust-toolchain.toml",
+]
 rust-version = "1.85"
 
 [lib]
