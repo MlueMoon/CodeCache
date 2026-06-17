@@ -94,9 +94,11 @@ A milestone is *done* only when its exit criteria are met under the Definition o
   as a 15-query offline proxy (**D21**; keyword Recall@10=1.000, semantic=0.000 = expected BM25 gap, D1).
   EXPLAIN QUERY PLAN baseline captured (FTS5 index used, no full scan). `bench.yml` (scheduled) + `release.yml`
   (fires only on human-pushed `v*` tag) authored; **196 tests green**, all four gates clean (Rust 1.85).
-  **NOT yet met (the release gate itself):** `v0.1.0` is **not tagged/published** — publish is human-gated and
-  staged behind 4 pre-publish steps (crates.io `codecache` name conflict, real repository URL,
-  `CARGO_REGISTRY_TOKEN`, tag push). Reviewer APPROVED all four slices (M10.1/M10.2/M10.4 one BLOCK→fix→APPROVE
+  **NOT yet met (the release gate itself):** `v0.1.0` is **not tagged/published** — publish is human-gated.
+  Pre-publish blocker #1 (crates.io name conflict) is **RESOLVED 2026-06-17 (D30):** crate renamed
+  `codecache` → `codecache-rs` (binary stays `codecache`), validated green (224 tests, dry-run exit 0). Three
+  human-gated steps remain (real repository URL, `CARGO_REGISTRY_TOKEN`, tag push). Reviewer APPROVED all four
+  slices (M10.1/M10.2/M10.4 one BLOCK→fix→APPROVE
   each). Brief: `.claude/briefs/BRIEF-M10-benchmarks-release.md`.
 
 ---
@@ -844,6 +846,44 @@ separate the BM25 vectors on NDCG (it un-masks the ordering that micro-suite Rec
 chunker A/B is directionally astchunk-favoring but too small + language-confounded to assert** — R3 takes the
 full A0–A5 matrix to scale. Owner: manager (this decision + doc-sync + commit) + research-harness-engineer
 (R2.7 build + run) + code-reviewer (BLOCK→APPROVE). Brief: `.claude/briefs/BRIEF-R2.7-contextbench-exit-run.md`.
+
+### D30 — Crate renamed `codecache` → `codecache-rs` to clear the crates.io name conflict (binary stays `codecache`)  · **Adopted 2026-06-17 (M10.4 release-prep; validated green)** (plan: M10.4 — resolves human-gated blocker #1) — *spec: §10.3 (`[package] name`)*
+
+`cargo publish --dry-run` (M10.4) reported `crate codecache@0.1.0 already exists on crates.io index`
+— the **first** of M10.4's four human-gated pre-publish blockers. **Decision: rename only the
+crate/package — `Cargo.toml [package] name = "codecache"` → `"codecache-rs"` — and keep the
+*binary* named `codecache`.** This is the **single semantic change** (`Cargo.lock` auto-updated its
+matching package-name line); `[lib] name`, `[[bin]] name`, the clap command `name`, the README
+binary references, the MCP `"command"`, and the research harness's `find_codecache_binary` are all
+**deliberately unchanged**.
+
+**Rationale.**
+1. **crates.io uniqueness is on `[package] name` only.** The registry enforces a unique *package*
+   name; the produced *binary* name is independent. So renaming the package clears the conflict
+   while the published binary stays `codecache` — the **ripgrep model** (crate/package name ≠ binary
+   name). This keeps the README quickstart, the MCP config, the research harness, and the
+   `assert_cmd` e2e tests (`cargo_bin("codecache")`) all unbroken.
+2. **`codecache-rs` over `ast-grep-cache`.** An earlier candidate `ast-grep-cache` was **rejected**:
+   it collides with the established `ast-grep-*` crate family (incl. `ast-grep-mcp`, an MCP AST-search
+   server that overlaps CodeCache's headline feature), implying false affiliation / namespace
+   squatting. `codecache-rs` is the conventional `-rs` disambiguator and stays brand-coherent.
+3. **Consumer impact is one line.** `cargo install` resolves by *package* name, so the install command
+   becomes `cargo install codecache-rs` — and it still installs a binary named `codecache`, so every
+   downstream `codecache <cmd>` invocation is unchanged.
+
+**Validation (Rust 1.85.0, 2026-06-17).** `cargo build` ✅; `cargo clippy --all-targets -- -D
+warnings` ✅ clean; `cargo test` ✅ **224 passed, 0 failed** (the README's "196" is now stale — the
+suite has grown; fix deferred to the release-polish pass); `cargo publish --dry-run` ✅ full verify
+from the packaged tarball (234 files / 1.3 MiB compressed, exit 0). *Note:* the dry-run only ENOENTs
+at its post-package `stat` when output lands on the `/mnt/c` DrvFs (WSL) mount — a filesystem
+artifact, not a manifest defect (passes cleanly on a native ext4 target).
+
+**Disposition.** Resolves M10.4 human-gated blocker **#1** (TODO.md). Blockers **#2** (real
+`repository` URL), **#3** (`CARGO_REGISTRY_TOKEN` secret), **#4** (push the `v0.1.0` tag) remain
+human-gated. Spec §10.3's `[package] name` excerpt and `docs/CLAUDE_CODE_SETUP.md`'s `cargo install`
+command are updated to `codecache-rs` in the same change; README/CHANGELOG package-name + test-count
+touch-ups are deferred to the (separate, not-yet-approved) release-polish pass. Owner: manager (this
+decision + doc-sync) + main session (the validated `Cargo.toml`/`Cargo.lock` change + local commit).
 
 ---
 

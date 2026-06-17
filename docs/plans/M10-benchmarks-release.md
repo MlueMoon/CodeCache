@@ -64,8 +64,9 @@ against gold contexts (**D16** — replaces the old 5-task token-reduction bench
   - Version bump to `0.1.0` (already in `Cargo.toml` §10.3); changelog.
   - `release.yml`: on tag `v0.1.0` → `cargo publish` (crates.io) + build release binaries
     (Linux/macOS/Windows) as GitHub release artifacts.
-  - **Install smoke test:** `cargo install codecache` (or download artifact) → `codecache init`
-    → `index` → `query` on a tiny fixture → assert success. Gate the release on this.
+  - **Install smoke test:** `cargo install codecache-rs` (the crate is `codecache-rs` post-D30; it
+    installs a binary named `codecache`) (or download artifact) → `codecache init` → `index` →
+    `query` on a tiny fixture → assert success. Gate the release on this.
 - **MANAGER/DEVOPS:** finalize README quickstart + `CLAUDE_CODE_SETUP.md` (MCP config §8.4),
   `CONTRIBUTING.md` (§10.4 deliverable), LICENSE.
 

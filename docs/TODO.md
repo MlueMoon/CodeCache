@@ -299,11 +299,18 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       `cargo publish --dry-run` exit 0, release binary smoke test init→index→query exit 0. Reviewer
       APPROVE (after fixing a corrupted LICENSE-APACHE + a stale doc command).
       - **⛔ HUMAN-GATED — NOT executed (awaiting go-ahead):** no `v0.1.0` tag, no real `cargo
-        publish`, no remote push. **Human must, before release:** (1) resolve the crates.io name
-        conflict — `codecache` already exists on crates.io (rename crate, or confirm ownership);
-        (2) set the real `repository` URL in `Cargo.toml` (currently placeholder
-        `github.com/EunHo-Lee/codecache`); (3) set the `CARGO_REGISTRY_TOKEN` repo secret; (4) push
-        the `v0.1.0` tag to trigger `release.yml`.
+        publish`, no remote push. **Human must, before release:**
+        - [x] **(1) crates.io name conflict — RESOLVED 2026-06-17 (D30):** crate renamed
+              `[package] name = "codecache"` → `"codecache-rs"` (crates.io enforces uniqueness only
+              on `[package] name`); the **binary stays `codecache`** (`[[bin]] name`, clap command,
+              README/MCP/harness unchanged — the ripgrep crate≠binary model). `ast-grep-cache` was
+              rejected (collides with the `ast-grep-*` family, incl. `ast-grep-mcp`). Validated green
+              on Rust 1.85.0: `cargo build`/`clippy -D warnings` clean, **224 tests pass**,
+              `cargo publish --dry-run` exit 0 (234 files / 1.3 MiB). See ROADMAP D30.
+        - [ ] (2) set the real `repository` URL in `Cargo.toml` (currently placeholder
+              `github.com/EunHo-Lee/codecache`);
+        - [ ] (3) set the `CARGO_REGISTRY_TOKEN` repo secret;
+        - [ ] (4) push the `v0.1.0` tag to trigger `release.yml`.
 
 ## Research track (R1–R4, post-M8; M9 can interleave) · spec: [`../project_overview.md`](../project_overview.md) §5–§6 · ROADMAP "Research trcheck-on-stop.ps1ack"
 - [x] **R1 harness** (D22 ratified 2026-06-13; main session drives): fork mini-SWE-agent (Python, MIT);

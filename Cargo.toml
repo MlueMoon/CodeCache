@@ -1,5 +1,5 @@
 [package]
-name = "codecache"
+name = "codecache-rs"
 version = "0.1.0"
 edition = "2021"
 description = "Local-first, AST-driven code-context retrieval engine for terminal AI workflows"

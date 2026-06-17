@@ -1779,7 +1779,9 @@ Claude Code (to user):
 
 ```toml
 [package]
-name = "codecache"
+# Package/crate name is `codecache-rs` to clear the crates.io name conflict (ROADMAP D30); the
+# produced *binary* stays `codecache` (`[[bin]] name` below) — the ripgrep crate≠binary model.
+name = "codecache-rs"
 version = "0.1.0"
 edition = "2021"
 

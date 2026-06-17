@@ -18,7 +18,7 @@ tools automatically when it needs to search your codebase for context.
 **Option A: Install from crates.io (after v0.1.0 is published)**
 
 ```bash
-cargo install codecache
+cargo install codecache-rs   # the crate is `codecache-rs`; it installs a binary named `codecache`
 ```
 
 **Option B: Build from source**
