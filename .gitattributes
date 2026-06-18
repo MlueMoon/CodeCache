@@ -1,8 +1,12 @@
 # Default: let Git normalize line endings for tracked text on commit.
 * text=auto
 
-# Parser test fixtures are byte-exact: span assertions in tests/parser_tests.rs compare
-# &source[start_byte..end_byte] to expected text, so newline bytes must NOT be rewritten.
-# Pin LF fixtures to LF and the CRLF fixture to CRLF regardless of platform / core.autocrlf.
-tests/fixtures/python/*.py    -text
+# Test fixtures are compared byte-exact: parser span assertions slice
+# &source[start_byte..end_byte] and compare to expected LF text (tests/parser_{tests,go_tests,
+# ts_tests}.rs); the formatter golden tests compare serializer output to committed files. Newline
+# bytes must NOT be rewritten on checkout, or Windows CRLF conversion breaks the asserts. Pin EVERY
+# fixture to LF regardless of platform / core.autocrlf (the blobs are committed LF)...
+tests/fixtures/**    -text
+# ...except the ONE intentional CRLF fixture (the parser CRLF-preservation test, which asserts the
+# parser keeps \r\n). More specific + last ⇒ this rule wins for that single file.
 tests/fixtures/python/crlf_function.py    -text eol=crlf
