@@ -80,6 +80,11 @@ pub fn chunk(tree: &Tree, source: &str, lang: Language) -> Result<Vec<Chunk>> {
     let mut chunks = parser.extract_chunks(tree, source, lang)?;
 
     // Single pass over the tree for the file-wide enrichment, then attach per-chunk references.
+    // NOTE: the enrichment helpers below (module_docstring / collect_imports / collect_calls) match
+    // Python grammar node kinds (`module`, `import_statement`, `import_from_statement`, `call`). For
+    // TS/Go they simply find nothing, so `file_docstring`/`imports`/`cross_references` are empty —
+    // the primary BM25 signals `symbol_name` + `chunk_text` (and `parent_symbol`) are language-
+    // agnostic and still populated. Extending enrichment to TS/Go grammar kinds is a future pass.
     let root = tree.root_node();
     let file_docstring = module_docstring(root, source);
     let imports = collect_imports(root, source);

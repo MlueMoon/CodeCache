@@ -31,7 +31,7 @@ Run all four from the repo root; this is exactly what must pass before any chang
 ```bash
 cargo fmt --all -- --check                  # formatting
 cargo clippy --all-targets -- -D warnings   # lint (warnings are errors)
-cargo test --all                            # all tests (currently 196, 0 failures)
+cargo test --all                            # all tests (currently 230, 0 failures)
 cargo build                                 # compiles clean
 ```
 On Windows PowerShell, prepend cargo to PATH if needed:
@@ -166,7 +166,7 @@ python3 -m venv research/r1_harness/.venv          # one-time (.venv is gitignor
 research/r1_harness/.venv/bin/pip install -r research/r1_harness/requirements.txt
 PYTHONUTF8=1 research/r1_harness/.venv/bin/python -m pytest research/r1_harness/
 ```
-Green baseline: **138 passed, 1 skipped** (the skip = the Windows-only path test). The ruff gates:
+Green baseline: **168 passed, 1 skipped** (the skip = the Windows-only path test). The ruff gates:
 ```bash
 research/r1_harness/.venv/bin/ruff check research/
 research/r1_harness/.venv/bin/ruff format --check research/

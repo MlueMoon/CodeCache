@@ -16,7 +16,8 @@ keep where a structured index saves the agent turns and tokens.
   with output ordered for the agent's next action; CLI-native too.
 - **v0.1 scope** — Python, TypeScript, Go. AST + BM25 (embeddings deferred to v0.2).
 
-> Status: **M0–M9 complete and green** (224 tests, four gates clean on Rust 1.85).
+> Status: **M0–M10 complete and green** (230 tests, four gates clean on Rust 1.85; plus post-M10
+> perf/release hardening — Decision Log D20/D30).
 > **v0.1.0 release staged** — Python, TypeScript, Go parsers; AST + BM25 retrieval; MCP stdio server.
 > Milestones in [`docs/ROADMAP.md`](docs/ROADMAP.md); positioning, landscape research, and the R1–R4
 > research track in [`project_overview.md`](project_overview.md).
@@ -29,6 +30,9 @@ codecache query "authenticate user" --max-tokens 4000
 codecache update src/auth.py    # incremental re-index
 codecache serve                 # MCP server for Claude Code
 ```
+
+**Full usage guide** (install → index → query → formats → MCP → troubleshooting, with real output):
+[`USAGE.md`](USAGE.md).
 
 ## How this project is built
 CodeCache is developed **test-first (TDD)** by a coordinated team of Claude Code agents, with
@@ -51,6 +55,9 @@ cargo bench
 
 **Detailed walkthrough** — running every suite/gate, a full CLI session, the MCP server, and the
 R1 research harness (setup + offline end-to-end run): [`docs/TESTING_AND_USAGE.md`](docs/TESTING_AND_USAGE.md).
+
+**Verifying the research track** — reproduce and audit the R1–R2 results (metrics, ablations,
+reproducibility, scientific caveats): [`docs/RESEARCH_VERIFICATION.md`](docs/RESEARCH_VERIFICATION.md).
 
 ## Claude Code MCP Setup
 

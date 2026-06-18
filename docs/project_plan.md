@@ -1513,7 +1513,7 @@ staleness window and is left untouched. Implemented at **M8.4**; the per-search 
       },
       "file_filter": {
         "type": "string",
-        "description": "Optional glob pattern to filter files (e.g., 'src/auth/**')",
+        "description": "Optional: restrict results to a single exact file path (e.g., 'src/auth/authenticate.py'). NOTE: v0.1 matches the path exactly — glob/wildcard expansion is a v0.2 target.",
         "default": null
       }
     },
@@ -1600,6 +1600,11 @@ contentful `symbols` table for an exact file OR a directory prefix (`<dir>/%`), 
 §6.4.3 text skeleton-line shape (signature/locator before bodies — D13).
 
 ### 8.3 MCP Server Pseudocode
+
+> **Illustrative pseudocode — not the shipped design.** The block below sketches the *conceptual*
+> server shape against a hypothetical `mcp_sdk`. The actual v0.1 server is **hand-rolled** JSON-RPC
+> 2.0 over stdio using only `serde`/`serde_json` (no `mcp_sdk`, no `rmcp`, no tokio) — see Decision
+> Log **D15** and [`src/mcp_server/`](../src/mcp_server/CLAUDE.md) for the real API.
 
 ```rust
 // mcp_server/mod.rs

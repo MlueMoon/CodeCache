@@ -37,7 +37,9 @@ binary). The main session drove **R1** (D22). The `principal-engineering-manager
   **EXCEPTION (D26 ratified):** the `fetch_contextbench.py` entrypoint (R2.5a) makes a **one-time,
   cached, no-auth-token** download from HF (`Contextbench/ContextBench`) — zero paid spend, authorized
   for the research harness only. The **product (codecache binary) stays fully air-gapped**.
-  The test suite remains hermetic — it never triggers a network call.
+  The test suite remains hermetic in the **network** sense — it never triggers a network call (the
+  fetch is entrypoint-only). It is **not** dependency-free: since R2.6 the suite imports `astchunk`
+  at runtime, so run it from the venv (see "Venv requirement (HARD, R2.6)" below).
 - **Scope discipline (`../project_overview.md` §7):** R1 builds outcome-agnostic apparatus; arm
   winners are an R3 determination, not R1.
 
@@ -71,8 +73,9 @@ on the system `python3`** (which lacks the dep). Always run via the venv Python:
 ```
 PYTHONUTF8=1 research/r1_harness/.venv/bin/python -m pytest research/r1_harness/
 ```
-Green baseline = **166 passed, 1 skipped** (the skip = the Windows-only path test; bumped from 138 at
-R2.7, +28 `test_contextbench_corpus.py` tests). After a real R2.7 run, the cloned repos under
+Green baseline = **168 passed, 1 skipped** (the skip = the Windows-only path test; 138 at R2.7,
++28 `test_contextbench_corpus.py` → 166, +2 from the 2026-06-17 review provenance tests → 168).
+After a real R2.7 run, the cloned repos under
 `cache/contextbench_repos/` contain their own test files — `pyproject.toml` `norecursedirs`
 (`cache`, `runs`, `.venv`, `vendor`) keeps `pytest` collecting only `tests/` regardless of invocation.
 
@@ -105,6 +108,11 @@ idempotent). `run_contextbench_exit.py` is the run entrypoint.
 - Download: one-time cached to `r1_harness/cache/contextbench/` (gitignored — do NOT commit blobs).
 - No auth token required. No paid spend.
 - Attribution: EuniAI / ContextBench team.
+- **Revision pin (review follow-up, 2026-06-17):** `fetch_contextbench.py --revision <branch|tag|sha>`
+  (default `main`) pins the fetched revision; a sidecar `contextbench_verified_slice.meta.json` records
+  the dataset/config/split + requested & **resolved commit SHA** (best-effort via `huggingface_hub`)
+  next to the records-list cache (whose bare-array shape is unchanged). Pass an explicit commit SHA for
+  a fully-reproducible corpus. Pure builder `build_provenance()` is unit-tested (`test_contextbench.py`).
 
 **CodeRAG-Bench RepoEval** (R2.5b CUT — D27, 2026-06-15; qualitative published reference ONLY, no in-repo loader):
 - Source: github.com/code-rag-bench/code-rag-bench, arXiv:2406.14497 (NAACL'25).
@@ -126,5 +134,6 @@ crate's golden rule.
 
 **Run the suite from the venv** (`PYTHONUTF8=1 research/r1_harness/.venv/bin/python -m pytest
 research/r1_harness/`), not the system `python3` — since R2.6 the suite depends on `astchunk` (MIT)
-and FAILS without it. Green baseline = **166 passed, 1 skipped** (bumped from 138 at R2.7). Full
+and FAILS without it. Green baseline = **168 passed, 1 skipped** (138 at R2.7 → 168 after the
+2026-06-17 review). Full
 canonical run + the ruff gates are in `docs/TESTING_AND_USAGE.md` §3.0.

@@ -18,7 +18,7 @@ use crate::chunker;
 use crate::hasher;
 use crate::parser::Parser;
 use crate::storage::{BatchWriter, Storage};
-use crate::types::{Chunk, FileMeta, Language};
+use crate::types::{Chunk, FileMeta};
 
 use super::{detect_language, IndexError};
 
@@ -77,8 +77,13 @@ fn extract_file(parser: &mut Parser, path: &Path) -> Result<(Vec<Chunk>, FileMet
     let mtime = file_mtime_secs(&metadata);
 
     // Language is known from discovery (only configured-language files are returned); recompute it
-    // defensively so the pipeline is self-contained and the FileMeta language is correct.
-    let language = detect_language(path).unwrap_or(Language::Python);
+    // here so the pipeline is self-contained and the FileMeta language is correct. The explicit
+    // `update_files`/MCP-`codecache_update` path can hand us an arbitrary caller-supplied path that
+    // discovery never filtered, so an unsupported extension is a typed error (D2-isolated: the file
+    // is counted-skipped) rather than a silent mis-detection as Python — which would write a bogus
+    // `files_metadata` row claiming the file is Python.
+    let language =
+        detect_language(path).ok_or_else(|| IndexError::UnsupportedLanguage(path.to_path_buf()))?;
 
     // §5.1 step 3b–3c: parse → chunk. The chunker degrades a malformed tree internally (D2).
     let tree = parser
@@ -179,6 +184,27 @@ mod tests {
         assert!(
             changed.is_empty(),
             "an unchanged file must not be reported as changed (no-write skip path), got {changed:?}"
+        );
+    }
+
+    /// An explicitly-supplied path with an unsupported extension (reachable only via
+    /// `update_files`/MCP `codecache_update`, never via discovery) must surface a typed
+    /// [`IndexError::UnsupportedLanguage`] — NOT be silently mis-detected as Python and written to
+    /// `files_metadata` as a 0-chunk Python file. The error is D2-isolated by the caller (the file
+    /// is counted-skipped), so no bogus metadata row is ever committed.
+    #[test]
+    fn extract_file_unsupported_extension_errors_instead_of_python_fallback() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let file = dir.path().join("notes.txt");
+        std::fs::write(&file, "plain prose, not code: def lurking(): pass\n")
+            .expect("write fixture");
+
+        let mut parser = Parser::new().expect("build parser");
+        let err = extract_file(&mut parser, &file)
+            .expect_err("an unsupported extension must error, not fall back to Python");
+        assert!(
+            matches!(err, IndexError::UnsupportedLanguage(ref p) if p == &file),
+            "expected IndexError::UnsupportedLanguage for the .txt path, got {err:?}"
         );
     }
 }

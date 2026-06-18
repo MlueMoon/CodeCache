@@ -446,3 +446,62 @@ def test_nonstring_file_value_skipped_or_coerced():
     for file_path, symbol_name in sq.gold_blocks:
         assert isinstance(file_path, str), f"gold_blocks file_path is not str: {file_path!r}"
         assert isinstance(symbol_name, str), f"gold_blocks symbol_name is not str: {symbol_name!r}"
+
+
+# ---------------------------------------------------------------------------
+# 8. Provenance — fetch_contextbench.build_provenance records the pinned revision
+#    (review follow-up 2026-06-17: the ContextBench-Lite corpus revision is now
+#    explicit + recorded in a sidecar `<slice>.meta.json` so a cached slice is
+#    reproducible — the records-list cache file itself is UNCHANGED).
+# ---------------------------------------------------------------------------
+
+
+def test_build_provenance_records_dataset_config_and_revision():
+    """`build_provenance` is a pure helper assembling the sidecar provenance record for a
+    cached ContextBench-Lite slice: dataset id, config, split, requested + resolved revision,
+    and cached/total counts. Deterministic and JSON-serialisable (written next to the records
+    list as `<slice>.meta.json`, NOT inside the list — so the loader's `json.loads → list`
+    contract is preserved)."""
+    import json
+
+    from fetch_contextbench import build_provenance
+
+    kwargs = dict(
+        dataset="Contextbench/ContextBench",
+        config="contextbench_verified",
+        split="train",
+        revision="main",
+        resolved_commit="0123456789abcdef",
+        n_cached=15,
+        n_total=500,
+    )
+    prov = build_provenance(**kwargs)
+    assert prov["dataset"] == "Contextbench/ContextBench"
+    assert prov["config"] == "contextbench_verified"
+    assert prov["split"] == "train"
+    assert prov["revision_requested"] == "main"
+    assert prov["revision_resolved"] == "0123456789abcdef"
+    assert prov["n_cached"] == 15
+    assert prov["n_total"] == 500
+    # Deterministic: same inputs → identical record.
+    assert build_provenance(**kwargs) == prov
+    # JSON round-trips (written as the sidecar .meta.json).
+    assert json.loads(json.dumps(prov)) == prov
+
+
+def test_build_provenance_allows_unresolved_commit():
+    """When the commit SHA cannot be resolved (offline / older hub), `resolved_commit=None` is
+    recorded faithfully — the requested revision is still pinned (reproducible-by-branch)."""
+    from fetch_contextbench import build_provenance
+
+    prov = build_provenance(
+        dataset="Contextbench/ContextBench",
+        config="contextbench_verified",
+        split="train",
+        revision="main",
+        resolved_commit=None,
+        n_cached=20,
+        n_total=500,
+    )
+    assert prov["revision_requested"] == "main"
+    assert prov["revision_resolved"] is None

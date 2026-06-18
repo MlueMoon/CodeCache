@@ -28,9 +28,12 @@ values produce clap's own nonzero parse error. `From<OutputFormat> for formatter
 seam keeping clap concerns inside `cli`. All `--db-path` share `DEFAULT_DB_PATH`.
 
 `run()` → `Cli::parse()` then `dispatch()`; errors return `anyhow::Result` (Err → nonzero exit via
-`main`). No reachable `unwrap()/expect()/panic!`. **Handlers are inert M7.3 placeholders** at this
-slice — real delegation to `app`/`Indexer`/`Retriever`/`Config`/`Storage` lands in M7.3; `serve` is
-an M8 stub.
+`main`). No reachable `unwrap()/expect()/panic!`.
+
+> **Historical note (M7.2 slice):** at this *parsing* slice the handlers were inert placeholders —
+> real delegation to `app`/`Indexer`/`Retriever`/`Config`/`Storage` landed in **M7.3**, and `serve`
+> was wired to the real `mcp_server` in **M8.1**. The "Shipped handlers (M7.3)" + "serve (M8.1)"
+> sections below are the current, authoritative state — every command is fully implemented.
 
 ## Tests / scenarios
 `tests/cli_tests.rs` (5 tests via `assert_cmd`/`predicates`, D17): documented-flag parsing,

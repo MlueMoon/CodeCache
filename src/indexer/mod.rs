@@ -259,6 +259,11 @@ pub enum IndexError {
         /// The underlying I/O error.
         source: std::io::Error,
     },
+    /// An explicitly-supplied path has an extension that maps to no configured language
+    /// (per-file; isolated by D2). Discovery never yields such a file, but `update_files` /
+    /// MCP `codecache_update` accept arbitrary caller paths — they are rejected here rather than
+    /// silently mis-indexed as Python.
+    UnsupportedLanguage(std::path::PathBuf),
     /// Content hashing of a file failed (per-file; isolated by D2).
     Hash(crate::hasher::HasherError),
     /// The Tree-sitter parser could not be built or a file could not be parsed.
@@ -281,6 +286,13 @@ impl std::fmt::Display for IndexError {
             IndexError::File { path, source } => {
                 write!(f, "failed to read '{}': {source}", path.display())
             }
+            IndexError::UnsupportedLanguage(path) => {
+                write!(
+                    f,
+                    "unsupported file type (no configured language): '{}'",
+                    path.display()
+                )
+            }
             IndexError::Hash(e) => write!(f, "failed to hash file: {e}"),
             IndexError::Parser(e) => write!(f, "failed to parse file: {e}"),
             IndexError::Chunker(e) => write!(f, "failed to chunk file: {e}"),
@@ -295,6 +307,8 @@ impl std::error::Error for IndexError {
             IndexError::Io { source, .. } => Some(source),
             IndexError::Glob { source, .. } => Some(source),
             IndexError::File { source, .. } => Some(source),
+            // No underlying error — the path itself is the failure.
+            IndexError::UnsupportedLanguage(_) => None,
             IndexError::Hash(e) => Some(e),
             IndexError::Parser(e) => Some(e),
             IndexError::Chunker(e) => Some(e),

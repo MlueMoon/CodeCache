@@ -847,8 +847,11 @@ file-level: native NDCG@10 **0.173** vs astchunk **0.249**; Recall@10 native 0.2
 gap is **real but small, n=10, and language-confounded**: the 3/10 astchunk-wins are all python (pytest);
 the typescript arm (vuejs/core) is mostly both-zero — a **`.ts`-only file cap excludes `.tsx`/`.vue`**, the
 leading hypothesis for vuejs gold files going unindexed, so the TS near-zero is a **coverage artifact, not a
-chunker signal**. **No winner asserted** — a defensible claim needs R3 scale (≥50 tasks/language on the
-release binary).
+chunker signal**. A further **repo-level confound**: with only **2 distinct repos** (pytest-dev/pytest,
+vuejs/core) the apparent astchunk lead could equally reflect repo-specific code characteristics (e.g.
+pytest's shorter function bodies) rather than a general chunking benefit — n=10 tasks across 2 repos cannot
+separate "chunker effect" from "repo effect". **No winner asserted** — a defensible claim needs R3 scale
+(≥50 tasks/language, multiple repos per language, on the release binary).
 
 **Measurement bug caught + fixed in review (the value of the BLOCK gate).** The first Run-2 build ran BOTH
 arms against the **same `task_dir`**: native `init`+`index` then astchunk `init`+`ingest`. Because

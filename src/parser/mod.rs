@@ -487,8 +487,9 @@ fn build_chunk(
 }
 
 /// Extend `end` (a byte offset on a UTF-8 / char boundary) to include the line terminator that
-/// immediately follows it: a lone `\n`, or a `\r\n` pair (CRLF preserved). If `end` is not at a
-/// line break (e.g. EOF without a trailing newline), it is returned unchanged. Operating on raw
+/// immediately follows it: a lone `\n`, a `\r\n` pair (CRLF preserved), or a lone `\r` (classic-Mac
+/// CR). If `end` is not at a line break (e.g. EOF without a trailing newline), it is returned
+/// unchanged. Operating on raw
 /// bytes here is safe because `\r` (0x0D) and `\n` (0x0A) are single-byte ASCII and never appear
 /// inside a multibyte UTF-8 sequence.
 fn extend_to_line_end(source: &str, end: usize) -> usize {
@@ -496,6 +497,10 @@ fn extend_to_line_end(source: &str, end: usize) -> usize {
     match bytes.get(end) {
         Some(b'\n') => end + 1,
         Some(b'\r') if bytes.get(end + 1) == Some(&b'\n') => end + 2,
+        // Lone `\r` (classic-Mac line ending): extend over the single CR. Checked after the `\r\n`
+        // arm, so CRLF still consumes both bytes. Only fires when `end` points AT a `\r`, so a span
+        // that already includes its terminator is never over-extended.
+        Some(b'\r') => end + 1,
         _ => end,
     }
 }
@@ -579,6 +584,19 @@ mod tests {
     fn queries_compile_against_grammar() {
         // `Parser::new` validates the embedded `.scm`; surfacing it as a test documents the seam.
         assert!(Parser::new().is_ok());
+    }
+
+    #[test]
+    fn extend_to_line_end_covers_lf_crlf_bare_cr_and_eof() {
+        // LF: extend the span over the single trailing '\n'.
+        assert_eq!(extend_to_line_end("a\n", 1), 2);
+        // CRLF: extend over the '\r\n' pair (the more specific arm wins).
+        assert_eq!(extend_to_line_end("a\r\n", 1), 3);
+        // Bare '\r' (classic-Mac line ending): extend over the lone '\r'.
+        assert_eq!(extend_to_line_end("a\rb", 1), 2);
+        // No terminator at `end` (EOF, or a non-newline byte): unchanged.
+        assert_eq!(extend_to_line_end("a", 1), 1);
+        assert_eq!(extend_to_line_end("ab", 1), 1);
     }
 
     #[test]

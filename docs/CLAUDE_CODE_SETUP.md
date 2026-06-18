@@ -149,9 +149,14 @@ about that file.
 **Input:**
 ```json
 {
-  "file_path": "src/auth.py"
+  "path": "src/auth.py"
 }
 ```
+
+The argument is named `path` (not `file_path`), and it must match the file **as indexed**. CodeCache
+stores absolute paths, and `codecache_search` returns absolute paths — so when chaining
+search → outline, pass the absolute path back. A path that does not match an indexed file returns
+`Found 0 symbols`.
 
 **Output:** All chunks indexed for that file: function names, class names, line ranges, and
 brief summaries.

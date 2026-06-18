@@ -30,8 +30,9 @@ it via the scheduled bench workflow — do not simply remove the assertion.
 
 ## Quality Gates
 
-All four of the following must be clean before a slice is considered done. CI enforces the same
-commands; "green locally" means "green in CI."
+All four of the following must be clean before a slice is considered done. CI enforces gates 1–3
+directly (gate 4, `cargo build`, is subsumed by clippy/test, which compile); "green locally" means
+"green in CI."
 
 ```bash
 # Gate 1 — formatting (CI runs --check; locally cargo fmt rewrites in place)
@@ -47,8 +48,9 @@ cargo test --all
 cargo build
 ```
 
-CI (`.github/workflows/ci.yml`) runs gates 1–3 on push and PR, on a matrix of ubuntu/macOS/
-Windows, with the toolchain pinned by `rust-toolchain.toml`. Local hooks
+CI (`.github/workflows/ci.yml`) runs gates 1–3 on push and PR on `ubuntu-latest`, with the
+toolchain pinned by `rust-toolchain.toml`. (The cross-platform ubuntu/macOS/Windows matrix runs in
+the release workflow's `install-smoke-test`, `.github/workflows/release.yml`, on tag push.) Local hooks
 (`.claude/hooks/check-on-stop.ps1`, `fmt-on-edit.ps1`) run the same commands so there are no
 CI-only surprises.
 

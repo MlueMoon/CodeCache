@@ -41,7 +41,15 @@ incremental idempotency; modify N ⇒ exactly N re-indexed; delete removes chunk
   stamp `file_path` on chunks → `insert_chunks` → build `FileMeta{content_hash, mtime, file_size,
   language, chunk_count}` → `update_file_hash`). Returns chunk count.
 - `IndexError` extended with per-file/store variants: `File{path,source}`, `Hash`, `Parser`,
-  `Chunker`, `Storage` (in addition to M5.1 `Io`/`Glob`). Typed, `impl Error` + `source()` chain.
+  `Chunker`, `Storage`, `UnsupportedLanguage(PathBuf)` (in addition to M5.1 `Io`/`Glob`). Typed,
+  `impl Error` + `source()` chain.
+- **Unsupported-extension guard (review fix, 2026-06-17).** `pipeline::extract_file` now returns
+  `IndexError::UnsupportedLanguage(path)` when `detect_language(path)` is `None`, instead of the old
+  `unwrap_or(Language::Python)` fallback. Discovery never yields such a file, so `index_all` is
+  unaffected; but `update_files` / MCP `codecache_update` accept arbitrary caller paths — an
+  unsupported file (e.g. `notes.txt`) is now D2-isolated (counted-skipped, no write) rather than
+  silently parsed as Python and recorded as a 0-chunk Python row in `files_metadata`. Pinned by
+  `pipeline::tests::extract_file_unsupported_extension_errors_instead_of_python_fallback`.
 
 ### D2 per-file isolation (batched per D20 — see below)
 Each changed/new file's per-file work runs inside its own **SAVEPOINT** within the run's single

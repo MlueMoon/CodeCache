@@ -75,8 +75,8 @@ S-expression queries). All three v0.1 languages wired.
   Go interface query). No `SymbolType` variant added. Go closures are `func_literal` (no recognizer
   arm) so they never double-emit.
 - **Span exactness:** byte spans satisfy `&source[start..end] == chunk_text`; the span is
-  extended to include the single trailing line terminator (`\n` / `\r\n`, CRLF preserved) that
-  closes the def's last line; multibyte identifiers stay on UTF-8 boundaries. `start_line`/
+  extended to include the single trailing line terminator (`\n`, `\r\n` (CRLF preserved), or a lone
+  `\r`) that closes the def's last line; multibyte identifiers stay on UTF-8 boundaries. `start_line`/
   `end_line` are 1-based inclusive (D7); the appended terminator does not advance `end_line`.
 - **error_rate denominator** is *named* nodes (anonymous literal tokens dilute the signal); the
   numerator counts every ERROR/MISSING node. `valid == 0.0`, malformed `> 0.0`, clamped to [0,1].

@@ -36,7 +36,7 @@ fn search_tool() -> Value {
                 },
                 "file_filter": {
                     "type": "string",
-                    "description": "Optional glob pattern to filter files (e.g., 'src/auth/**')",
+                    "description": "Optional: restrict results to a single exact file path (e.g., 'src/auth/authenticate.py'). Glob/wildcard patterns are NOT expanded in v0.1 — pass a path as indexed (codecache_search returns absolute paths).",
                     "default": null
                 }
             },

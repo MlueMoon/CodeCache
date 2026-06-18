@@ -572,3 +572,37 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
 - [x] `.gitignore`: OSS policy (commit shared team) + secrets + Cargo + Claude-local
 - [x] Harness engineering: SessionStart context-priming hook, permissions allowlist,
       durable briefs (`.claude/briefs/`), `/standup`, seeded project memory
+
+---
+
+### Independent director review (2026-06-17) — verification + fixes · report: [`REVIEW_2026-06-17.md`](REVIEW_2026-06-17.md)
+Full-project verification + multi-agent audit (6 dimensions × adversarial verification). **All gates
+re-verified green:** `cargo build`/`clippy -D warnings`/`fmt --check` clean, `cargo test --all` **230
+passed/0 failed** (was 228; +2 new tests — the indexer fix below + the bare-`\r` parser fix); research
+`ruff` clean + `pytest` **168 passed/1 skipped** (was 166; +2 provenance tests). End-to-end product run (init→index→status→query[text/json/toon]→update→`serve` MCP) validated
+on a live Python/TS/Go repo. 32 findings confirmed (0 critical), 5 refuted by the adversarial pass.
+- [x] **Code fix — silent Python fallback (indexer).** `pipeline::extract_file` returned
+      `unwrap_or(Language::Python)` for an unknown extension, so `update_files`/MCP `codecache_update`
+      on an unsupported file (e.g. `notes.txt`) silently wrote a 0-chunk "Python" `files_metadata` row.
+      Now returns `IndexError::UnsupportedLanguage(path)` (D2-isolated → counted-skipped, no write).
+      RED→GREEN test `pipeline::tests::extract_file_unsupported_extension_errors_instead_of_python_fallback`.
+- [x] **Schema/doc fix — `codecache_search.file_filter` overclaimed glob.** The MCP tool schema
+      (`tools.rs`) + plan §8.2 advertised a glob pattern; v0.1 matches the path **exactly**. Corrected
+      both to state exact-match (glob = v0.2). No test pinned the description string.
+- [x] **Doc fix — `codecache_outline` input field** documented as `file_path` in CLAUDE_CODE_SETUP;
+      handler requires `path` (following the doc verbatim → `-32602`). Corrected + added "match the
+      indexed (absolute) path" note.
+- [x] **Doc-drift sweep:** stale test counts (README 224→228; TESTING_AND_USAGE 196→228, 138→166
+      research); CONTRIBUTING CI-parity + OS-matrix claims; `cli/CLAUDE.md` stale "inert placeholders";
+      plan §8.3 "illustrative pseudocode" note; `release.yml` `--no-verify` rationale; `research/CLAUDE.md`
+      hermetic-≠-dependency-free clarification; ROADMAP n=10/2-repo confound caveat.
+- [x] **New docs:** [`USAGE.md`](../USAGE.md) (user guide) + [`docs/RESEARCH_VERIFICATION.md`](RESEARCH_VERIFICATION.md)
+      (research reproduction/verification protocol); linked from README.
+- [x] **Pre-release follow-ups (both done 2026-06-17, TDD):**
+  - [x] **HF dataset revision pin** — `fetch_contextbench.py` gained `--revision` (default `main`;
+        pass a commit SHA for full reproducibility) + a sidecar `…_slice.meta.json` recording the
+        requested & best-effort-resolved commit SHA (records-list cache shape unchanged). Pure
+        `build_provenance()` unit-tested (+2 research tests → **168 passed/1 skipped**).
+  - [x] **Bare-`\r` line endings** — `parser::extend_to_line_end` now extends a span over a lone `\r`
+        (after the `\r\n` arm). RED→GREEN unit test `extend_to_line_end_covers_lf_crlf_bare_cr_and_eof`
+        (+1 Rust test → **230 passed/0 failed**).
