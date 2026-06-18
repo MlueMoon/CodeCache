@@ -1,0 +1,35 @@
+# R1 eval-harness dependencies (research-only; out-of-crate; not a Rust dependency).
+#
+# The offline core (r1harness.scorer / .trajectory / .corpus / .codecache_tool)
+# needs only the Python stdlib + pytest. mini-swe-agent is required only by the
+# runner (the agent loop) — it is the forked agent harness (D22).
+#
+# Pinned for reproducibility (R4 artifact). mini-swe-agent 2.4.1 is the verified
+# latest release (2026-06-11, MIT). It transitively pulls litellm, pydantic,
+# datasets, textual, etc. — a large tree; install only when running the agent.
+
+mini-swe-agent==2.4.1
+
+# R2.5a external-corpus loader — HF stack (research-only; one-time cached download;
+# no auth token; fetch entrypoint only — test suite and mapper core do NOT import these).
+# Pinned exact versions: datasets 5.0.0 + huggingface_hub 1.19.0 (verified available
+# on PyPI 2026-06-15 via venv probe on system Python 3.12.3).
+datasets==5.0.0
+huggingface_hub==1.19.0
+
+# R2.6 cAST baseline chunker — astchunk PyPI package (MIT, research-only).
+# astchunk 0.1.0 (verified 2026-06-15; MIT license confirmed).
+# Transitives pinned: tree-sitter 0.25.2, tree-sitter-python 0.25.0,
+# tree-sitter-typescript 0.23.2, numpy 2.4.6, pyrsistent 0.20.0.
+# tree-sitter-java and tree-sitter-c-sharp are also pulled in by astchunk but
+# are unused in CodeCache research (Java/C# corpora not present).
+astchunk==0.1.0
+tree-sitter==0.25.2
+tree-sitter-python==0.25.0
+tree-sitter-typescript==0.23.2
+numpy==2.4.6
+pyrsistent==0.20.0
+
+# Dev / test:
+pytest>=8.0
+ruff>=0.15        # lint + format gate for the research tree (ROADMAP D23)

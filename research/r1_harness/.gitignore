@@ -1,0 +1,22 @@
+# R1 harness — local artifacts (research-only; never committed)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+.env
+
+# Trajectory logs + materialised corpora + metric reports from runs
+runs/
+*.jsonl
+
+# Vendored mini-swe-agent checkout (installed via requirements.txt, not committed)
+vendor/
+
+# R2.5a external-corpus cache (downloaded by fetch_contextbench.py; gitignored per D26
+# CC-BY-SA share-alike constraint — do NOT commit corpus blobs).
+cache/
+# R2.7 cloned ContextBench-Lite repos (git clone @ base_commit; can be 100s of MB each).
+# Redundant under cache/ above, but explicit so the intent survives if cache/ is ever scoped.
+cache/contextbench_repos/

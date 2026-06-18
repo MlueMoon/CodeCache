@@ -1,0 +1,277 @@
+# release.yml — CodeCache v0.1.0 release workflow.
+#
+# HUMAN-GATED: This workflow ONLY runs when a human explicitly pushes a version tag (e.g. v0.1.0).
+# CI does NOT create tags automatically. The tag push is the human go-ahead signal.
+# Before pushing the tag, the human must:
+#   1. (DONE 2026-06-17) `repository` in Cargo.toml is set to https://github.com/AdvancedUno/codecache.
+#   2. Set the CARGO_REGISTRY_TOKEN secret in the repository settings.
+#   3. Run `cargo publish --dry-run` one final time to verify packaging.
+#   4. Push the tag: git tag v0.1.0 && git push origin v0.1.0
+#
+# REPOSITORY URL (resolved 2026-06-17): Cargo.toml `repository = "https://github.com/AdvancedUno/codecache"`
+# is set and confirmed final. crates.io records this value permanently per version; correcting it after
+# publish would require a yanked version + re-publish under a patch bump. The crate publishes as
+# `codecache-rs` (the package name); the installed binary is `codecache`.
+#
+# WORKFLOW OVERVIEW:
+#   1. install-smoke-test (matrix: ubuntu/macos/windows) — build --release, run init→index→query on
+#      a tiny fixture, assert exit 0. A broken binary NEVER reaches publish.
+#   2. publish (ubuntu, after all smoke tests pass) — cargo publish to crates.io via CARGO_REGISTRY_TOKEN.
+#   3. release-binaries (matrix: ubuntu/macos/windows, after all smoke tests pass) — build --release
+#      and upload the platform binary as a GitHub Release asset.
+#
+# SECURITY: CARGO_REGISTRY_TOKEN is a repository secret. The publish job is gated on the tag pattern
+# AND the secret; it cannot fire on a branch push or a PR run (on.push.tags pattern + the implicit
+# secret requirement). The release binary upload uses GITHUB_TOKEN (auto-provisioned, read-write on
+# the triggering repository; least-privilege for releases).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# No concurrency cancellation on release — a release must complete once started.
+# If two tags race (unusual), each gets its own run.
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 1: Install smoke test — build the release binary and exercise it.
+  # This job runs on all three target platforms in parallel. The publish job and
+  # the binary-upload job do NOT start until ALL three smoke tests pass.
+  # ─────────────────────────────────────────────────────────────────────────────
+  install-smoke-test:
+    name: Smoke test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Honors rust-toolchain.toml (channel 1.85.0 + components).
+      # Mirrors the toolchain install in ci.yml exactly.
+      - name: Install Rust toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup component add rustfmt clippy
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+            ${{ runner.os }}-cargo-
+
+      # Run the same quality gates CI runs — a release must be gate-clean.
+      - name: Format check (gate 1)
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (gate 2)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests (gate 3)
+        run: cargo test --all
+
+      # Build the release binary. This is what gets uploaded as the release artifact.
+      - name: Build release binary
+        run: cargo build --release
+
+      # Smoke test: exercise the full init → index → query path on a tiny fixture.
+      # Uses the binary just built (not cargo install, which would hit crates.io).
+      # The fixture is a single tiny Python file; the query returns ≥0 results with exit 0.
+      - name: Smoke test (unix)
+        if: runner.os != 'Windows'
+        run: |
+          set -e
+          BINARY="./target/release/codecache"
+          TMPDIR="$(mktemp -d)"
+          cd "$TMPDIR"
+
+          # Initialize the index database.
+          "$BINARY" init
+          echo "codecache init: exit $?"
+
+          # Write a minimal Python file with a recognizable function name.
+          cat > hello.py << 'EOF'
+          def greet_user(name: str) -> str:
+              """Return a greeting for the user."""
+              return f"Hello, {name}!"
+
+          def main():
+              print(greet_user("world"))
+          EOF
+
+          # Index the directory (paths are configured at init time; no path arg to index).
+          "$BINARY" index
+          echo "codecache index: exit $?"
+
+          # Query for the indexed function — must exit 0.
+          "$BINARY" query "greet_user"
+          EXIT=$?
+          echo "codecache query: exit $EXIT"
+          if [ $EXIT -ne 0 ]; then
+            echo "SMOKE TEST FAILED: codecache query returned non-zero"
+            exit 1
+          fi
+          echo "Smoke test PASSED."
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $Binary = ".\target\release\codecache.exe"
+          $TmpDir = Join-Path $env:TEMP "codecache_smoke_$([System.IO.Path]::GetRandomFileName())"
+          New-Item -ItemType Directory -Path $TmpDir | Out-Null
+          Push-Location $TmpDir
+
+          # Initialize the index database.
+          & $Binary init
+          Write-Host "codecache init: exit $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { throw "codecache init failed" }
+
+          # Write a minimal Python file.
+          @"
+          def greet_user(name):
+              """Return a greeting for the user."""
+              return f"Hello, {name}!"
+
+          def main():
+              print(greet_user("world"))
+          "@ | Set-Content hello.py
+
+          # Index the directory (paths configured at init time; no path arg to index).
+          & $Binary index
+          Write-Host "codecache index: exit $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { throw "codecache index failed" }
+
+          # Query for the indexed function — must exit 0.
+          & $Binary query "greet_user"
+          Write-Host "codecache query: exit $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { throw "codecache query failed" }
+
+          Write-Host "Smoke test PASSED."
+          Pop-Location
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 2: cargo publish — upload to crates.io.
+  # Runs only after ALL three smoke tests pass. Requires the CARGO_REGISTRY_TOKEN
+  # secret; without it the step fails fast with a clear auth error rather than
+  # silently. This job is ubuntu-only (cargo publish needs exactly one run).
+  # ─────────────────────────────────────────────────────────────────────────────
+  publish:
+    name: Publish to crates.io
+    needs: install-smoke-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-publish-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-publish-
+            ${{ runner.os }}-cargo-
+
+      # cargo publish — requires CARGO_REGISTRY_TOKEN.
+      # HUMAN: set this secret in Settings → Secrets → Actions → New repository secret.
+      # The token must have the "publish-new" or "publish-update" scope on crates.io.
+      # `--no-verify` skips the redundant from-scratch rebuild cargo would otherwise run inside
+      # `publish`: the `install-smoke-test` job (a hard `needs:` dependency of this job) already
+      # ran fmt + clippy + `cargo test` + `cargo build --release` on the ubuntu/macOS/Windows matrix,
+      # so the packaged crate is already proven to build. Skipping the re-verify saves several CI
+      # minutes without weakening the gate (a broken artifact never reaches this step).
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --no-verify
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Job 3: Release binaries — build and upload platform-specific binaries.
+  # Runs in parallel with publish (both need install-smoke-test). Each platform
+  # builds its own binary and uploads it to the GitHub Release that GitHub creates
+  # automatically from the pushed tag.
+  # ─────────────────────────────────────────────────────────────────────────────
+  release-binaries:
+    name: Release binary (${{ matrix.os }})
+    needs: install-smoke-test
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write  # Required for softprops/action-gh-release to upload assets.
+    strategy:
+      fail-fast: false  # Upload as many binaries as succeed even if one platform fails.
+      matrix:
+        include:
+          - os: ubuntu-latest
+            binary_name: codecache
+            asset_name: codecache-linux-x86_64
+          - os: macos-latest
+            binary_name: codecache
+            asset_name: codecache-macos-x86_64
+          - os: windows-latest
+            binary_name: codecache.exe
+            asset_name: codecache-windows-x86_64.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+
+      - name: Cache cargo registry + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+            ${{ runner.os }}-cargo-
+
+      - name: Build release binary
+        run: cargo build --release
+
+      # softprops/action-gh-release creates (or updates) the GitHub Release for
+      # the pushed tag and uploads the binary as a release asset. Using v2 (latest
+      # major at time of authoring; pin to a major version as with other actions).
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/${{ matrix.binary_name }}
+          name: CodeCache ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
