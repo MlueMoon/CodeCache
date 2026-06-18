@@ -98,7 +98,10 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           set -e
-          BINARY="./target/release/codecache"
+          # Absolute path: the smoke test cd's into a temp dir below, so a relative
+          # ./target path would resolve under TMPDIR and break. $GITHUB_WORKSPACE is the
+          # checkout root where `cargo build --release` placed the binary.
+          BINARY="$GITHUB_WORKSPACE/target/release/codecache"
           TMPDIR="$(mktemp -d)"
           cd "$TMPDIR"
 
@@ -135,7 +138,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $Binary = ".\target\release\codecache.exe"
+          # Absolute path: Push-Location into a temp dir below would break a relative .\target path.
+          $Binary = "$env:GITHUB_WORKSPACE\target\release\codecache.exe"
           $TmpDir = Join-Path $env:TEMP "codecache_smoke_$([System.IO.Path]::GetRandomFileName())"
           New-Item -ItemType Directory -Path $TmpDir | Out-Null
           Push-Location $TmpDir
