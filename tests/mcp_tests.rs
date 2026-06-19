@@ -375,6 +375,60 @@ fn malformed_stream_never_panics_and_each_response_is_structured() {
     );
 }
 
+// ── 6b. JSON-RPC notifications (no `id`) get NO response (spec: a server MUST NOT reply) ──────
+
+/// Per JSON-RPC 2.0 a *Notification* is a request object with NO `id` member, and the server MUST
+/// NOT send back any response — neither a success nor an error. The MCP `notifications/initialized`
+/// message a client (e.g. Claude Code) sends right after the handshake is exactly such a
+/// notification: the server must silently ignore it. (Previously the server wrongly answered it with
+/// a `-32601` "method not found" error and `id: null`, which breaks strict client checks.)
+#[test]
+fn notification_initialized_gets_no_response() {
+    let output = run_server("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n");
+    assert!(
+        output.is_empty(),
+        "a notification (a request with no `id`) must produce NO response frame; got: {:?}",
+        std::str::from_utf8(&output)
+    );
+}
+
+/// The discriminator is the ABSENCE of `id`, not the method name: a notification with an unknown
+/// method is dropped too (no `-32601`). And a notification interleaved with real requests must not
+/// desync the stream — only the two id-bearing requests are answered, in their original order.
+#[test]
+fn notifications_are_silently_dropped_amid_real_requests() {
+    let mut input = String::new();
+    input.push_str(&initialize_request_line(1));
+    input.push_str("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n"); // notification
+    input.push_str("{\"jsonrpc\":\"2.0\",\"method\":\"some/unknown/notification\"}\n"); // unknown-method notification
+    input.push_str(&tools_list_request_line(2));
+
+    let output = run_server(&input);
+    let text = std::str::from_utf8(&output).expect("output must be valid UTF-8");
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(
+        lines.len(),
+        2,
+        "exactly the two id-bearing requests must be answered; the two notifications emit no \
+         frame; got: {text:?}"
+    );
+    let ids: Vec<i64> = lines
+        .iter()
+        .map(|l| {
+            serde_json::from_str::<serde_json::Value>(l)
+                .expect("each response line must be valid JSON")
+                .get("id")
+                .and_then(|v| v.as_i64())
+                .expect("each answered response must echo a numeric id")
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        vec![1, 2],
+        "the answered responses must be initialize(1) then tools/list(2), in order; got: {text:?}"
+    );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 // M8.2 — `tools/list` returns all three MCP tools with the exact §8.2 inputSchemas (D13).
 //

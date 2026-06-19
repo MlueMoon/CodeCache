@@ -21,6 +21,12 @@ no subprocess) via the generic `serve` seam below.
 ## Protocol decisions (D15: hand-rolled, serde/serde_json only — no `rmcp`, no tokio)
 - **Framing:** line-delimited JSON — exactly one JSON-RPC 2.0 object per line, each `\n`-terminated.
   No `Content-Length` headers. Blank lines skipped; clean EOF → `Ok(())`.
+- **Notifications:** a request object with **no `id` member** is a JSON-RPC notification — the server
+  emits **no frame** for it (`handle_line` returns `Option<Value>` → `None`), per the spec's MUST-NOT-reply
+  rule. The discriminator is the *absence* of `id`, not the method name, so an unknown notification
+  method is dropped silently (NOT `-32601`). This is why `notifications/initialized` (sent right after
+  the handshake) is correctly ignored. An explicit `id: null` is still a request (keyed off member
+  presence, not value); parse-error/non-object lines still answer with a null-id `-32700`.
 - **protocolVersion:** `"2024-11-05"` advertised in the `initialize` result (constant in `mod.rs`).
 - **Error codes:** parse/non-object → `-32700`; unknown method → `-32601`; missing/invalid params
   (incl. `initialize` without `params`/`protocolVersion`) → `-32602`. Every error is a structured
@@ -85,3 +91,8 @@ mapping; `serve` stub replaced (stdio wired; SSE → clean unsupported error, D4
 `handlers.rs` + D19 `symbols_for_path`. **M8.4 DONE (2026-06-12):** D14 self-healing search +
 `StalenessStats` hook; reviewer APPROVED (0 findings). **M8 COMPLETE** — 166 tests green, all four
 gates clean (Rust 1.85). v0.1 MCP surface (stdio, 3 tools, self-healing) frozen; SSE/HTTP = v0.2 (D4).
+**Post-M8 fix (2026-06-19):** JSON-RPC notifications (no `id`) are now silently ignored — previously
+`notifications/initialized` wrongly drew a `-32601` error frame, breaking strict client handshakes.
+`handle_line` returns `Option<Value>`; `serve` writes nothing on `None`. +2 RED→GREEN tests in
+`tests/mcp_tests.rs` (`notification_initialized_gets_no_response`,
+`notifications_are_silently_dropped_amid_real_requests`); 21 MCP / 232 total Rust tests green.
