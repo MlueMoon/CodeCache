@@ -231,6 +231,13 @@ query **p95 < 500ms** on 100K LOC (§1.3/§11.2). Token estimate = §6.3 char he
       (`files_checked`/`files_reindexed`/`files_dropped`) via `CodeCacheServer::staleness_handle()`.
       Boundary: results without a stored §4.4 hash have no staleness window (spec §8.2). 4 new tests
       (mcp_tests 19/19); reviewer APPROVED (0 findings); 166 tests green, all four gates clean.
+- [x] **M8 post-release fix — JSON-RPC notifications ignored** *(DONE 2026-06-19)*: a request with no
+      `id` member is a notification; the server now emits **no frame** for it (spec MUST-NOT-reply).
+      Previously `notifications/initialized` (sent right after the handshake) fell through `dispatch`'s
+      `_` arm and drew a spurious `-32601`+`id:null` error frame, failing strict client handshakes.
+      `handle_line` → `Option<Value>` (`None` = drop); `serve` skips the write on `None`; discriminator
+      is *absence* of `id` (explicit `id:null` and parse errors still answer per spec). 2 new RED→GREEN
+      tests (mcp_tests 21/21); all four gates clean; **232 Rust tests green** (was 230).
 
 ## Phase 9 — TypeScript + Go (M9) · plan: [plans/M9-typescript-go.md](plans/M9-typescript-go.md)
 - [x] **M9.1 TypeScript** — `src/parser/typescript.rs` + `queries/typescript.scm` wired through a

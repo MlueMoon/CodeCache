@@ -190,41 +190,62 @@ pub fn serve<R: BufRead, W: Write>(
             continue;
         }
 
-        let response = handle_line(&mut server, &line);
-        write_frame(&mut writer, &response)?;
+        // A JSON-RPC *notification* (a request with no `id`) yields `None`: per the spec the server
+        // MUST NOT answer it, so we write no frame at all. Everything else writes exactly one.
+        if let Some(response) = handle_line(&mut server, &line) {
+            write_frame(&mut writer, &response)?;
+        }
     }
     writer.flush()?;
     Ok(())
 }
 
-/// Build the JSON-RPC response value for a single (non-blank) input line. Parse failures and
-/// structurally invalid envelopes map to error objects; valid envelopes dispatch by `method`.
-fn handle_line(server: &mut CodeCacheServer, line: &str) -> Value {
+/// Build the JSON-RPC response value for a single (non-blank) input line, or `None` when no frame
+/// must be written. Parse failures and structurally invalid envelopes map to error objects; a
+/// *notification* (a request with no `id`) is silently dropped (`None`); valid requests dispatch by
+/// `method`.
+fn handle_line(server: &mut CodeCacheServer, line: &str) -> Option<Value> {
     let request: Value = match serde_json::from_str(line) {
         Ok(value) => value,
-        Err(_) => return error_response(Value::Null, PARSE_ERROR, "Parse error"),
+        // A parse error can't reveal whether the sender meant a notification, so per JSON-RPC we
+        // still answer it with a null-id error rather than silently dropping it.
+        Err(_) => return Some(error_response(Value::Null, PARSE_ERROR, "Parse error")),
     };
 
     // A JSON-RPC request must be an object; a bare array/scalar is malformed.
     let Some(obj) = request.as_object() else {
-        return error_response(
+        return Some(error_response(
             Value::Null,
             PARSE_ERROR,
             "Parse error: request must be a JSON object",
-        );
+        ));
     };
 
-    // Echo the request id verbatim (or null when absent/unparseable per JSON-RPC).
+    // JSON-RPC 2.0: a request object with NO `id` member is a *notification*, and a server MUST NOT
+    // reply to it — not with a result, not with an error. So the MCP `notifications/initialized`
+    // sent right after the handshake (and any other notification) is silently ignored. The
+    // discriminator is the ABSENCE of `id`, not the method name, so an unknown notification method
+    // is dropped too rather than producing a spurious -32601. (An explicit `id: null` is a request
+    // per the spec, not a notification, so we key off the member's presence, not its value.)
+    if !obj.contains_key("id") {
+        return None;
+    }
+
+    // Echo the request id verbatim (guaranteed present here; default to null defensively).
     let id = obj.get("id").cloned().unwrap_or(Value::Null);
 
     let Some(method) = obj.get("method").and_then(Value::as_str) else {
-        return error_response(id, INVALID_PARAMS, "Invalid request: missing `method`");
+        return Some(error_response(
+            id,
+            INVALID_PARAMS,
+            "Invalid request: missing `method`",
+        ));
     };
 
-    match server.dispatch(method, obj.get("params")) {
+    Some(match server.dispatch(method, obj.get("params")) {
         Ok(result) => success_response(id, result),
         Err((code, message)) => error_response(id, code, &message),
-    }
+    })
 }
 
 /// A JSON-RPC 2.0 success envelope: `{ jsonrpc, id, result }`.
