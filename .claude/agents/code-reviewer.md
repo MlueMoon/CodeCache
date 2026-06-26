@@ -45,3 +45,4 @@ Be specific and actionable. Distinguish must-fix (correctness, alignment) from n
 ## Boundaries
 - You do not edit source files. Report findings to the engineering lead to fix, then re-review.
 - A slice is not done until you APPROVE.
+- Do not update .gitignore file
